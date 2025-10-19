@@ -2,7 +2,7 @@
  * 設定モーダルコンポーネント
  * APIキーやアプリケーション設定を管理
  */
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Cog6ToothIcon, XMarkIcon, CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/outline";
 import { AppSettings, loadSettings, saveSettings } from "../utils/storage";
 import { logDebug } from "../utils/errorHandler";
@@ -16,18 +16,35 @@ interface SettingsModalProps {
 
 function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
   const [settings, setSettings] = useState<AppSettings>(loadSettings());
+  const [originalSettings, setOriginalSettings] = useState<AppSettings>(loadSettings());
   const [showApiKey, setShowApiKey] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
+  const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  // 設定が変更されたかどうかを確認
+  const hasUnsavedChanges = () => {
+    return JSON.stringify(settings) !== JSON.stringify(originalSettings);
+  };
 
   // モーダルが開いている時にbodyのスクロールを防ぐ
   useEffect(() => {
     if (isOpen) {
-      setSettings(loadSettings());
+      const loadedSettings = loadSettings();
+      setSettings(loadedSettings);
+      setOriginalSettings(loadedSettings);
       setSaveMessage("");
+      setShowUnsavedWarning(false);
       // bodyのスクロールを無効化
       document.body.style.overflow = 'hidden';
       document.body.style.touchAction = 'none';
+      
+      // フォーカスをモーダルに移動
+      setTimeout(() => {
+        closeButtonRef.current?.focus();
+      }, 100);
     } else {
       // bodyのスクロールを復元
       document.body.style.overflow = 'hidden'; // 元々hiddenなのでhiddenに戻す
@@ -41,11 +58,63 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
     };
   }, [isOpen]);
 
+  // Escキーでモーダルを閉じる
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        e.preventDefault();
+        handleClose();
+      }
+    };
+
+    if (isOpen) {
+      document.addEventListener('keydown', handleKeyDown);
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, settings, originalSettings]);
+
+  // フォーカストラップ
+  useEffect(() => {
+    if (!isOpen || !modalRef.current) return;
+
+    const modal = modalRef.current;
+    const focusableElements = modal.querySelectorAll<HTMLElement>(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+
+    const handleTabKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+
+      if (e.shiftKey) {
+        if (document.activeElement === firstElement) {
+          e.preventDefault();
+          lastElement?.focus();
+        }
+      } else {
+        if (document.activeElement === lastElement) {
+          e.preventDefault();
+          firstElement?.focus();
+        }
+      }
+    };
+
+    modal.addEventListener('keydown', handleTabKey);
+    return () => {
+      modal.removeEventListener('keydown', handleTabKey);
+    };
+  }, [isOpen]);
+
   const handleSave = () => {
     try {
       setIsSaving(true);
       saveSettings(settings);
       onSave(settings);
+      setOriginalSettings(settings);
       setSaveMessage("SAVED");
       logDebug('Settings', '設定を保存しました', {
         hasApiKey: settings.openaiApiKey.length > 0,
@@ -56,44 +125,73 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
       // 保存完了メッセージを一定時間後に消去してモーダルを閉じる
       setTimeout(() => {
         setSaveMessage("");
+        setShowApiKey(false);
         onClose();
       }, SAVE_MESSAGE_TIMEOUT_MS);
     } catch (error) {
       setSaveMessage("ERROR: Failed to save");
+      logDebug('Settings', '設定の保存に失敗しました', { error });
     } finally {
       setIsSaving(false);
     }
   };
 
   const handleClose = () => {
+    if (hasUnsavedChanges() && !showUnsavedWarning) {
+      setShowUnsavedWarning(true);
+      return;
+    }
     setShowApiKey(false);
+    setShowUnsavedWarning(false);
     onClose();
+  };
+
+  const handleOverlayClick = () => {
+    if (hasUnsavedChanges() && !showUnsavedWarning) {
+      setShowUnsavedWarning(true);
+      return;
+    }
+    handleClose();
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden touch-none">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden touch-none animate-fadeIn"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="settings-modal-title"
+    >
       {/* オーバーレイ */}
       <div 
-        className="absolute inset-0 bg-black/90 backdrop-blur-sm"
-        onClick={handleClose}
+        className="absolute inset-0 bg-black/90 backdrop-blur-sm transition-opacity duration-300"
+        onClick={handleOverlayClick}
         onTouchMove={(e) => e.preventDefault()}
+        aria-hidden="true"
       />
       
       {/* モーダル本体 */}
-      <div className="relative z-10 w-full max-w-2xl mx-4 bg-black border border-gray-700 shadow-2xl flex flex-col touch-auto" style={{ maxHeight: 'calc(100dvh - 2rem)' }}>
+      <div 
+        ref={modalRef}
+        className="relative z-10 w-full max-w-2xl mx-4 bg-black border border-gray-700 shadow-2xl flex flex-col touch-auto animate-slideUp" 
+        style={{ maxHeight: 'calc(100dvh - 2rem)' }}
+      >
         {/* ヘッダー */}
         <div className="flex-shrink-0 bg-black border-b border-gray-700 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <Cog6ToothIcon className="w-7 h-7 text-white" />
-            <h2 className="text-xl font-light text-white uppercase tracking-widest">
+            <Cog6ToothIcon className="w-7 h-7 text-white" aria-hidden="true" />
+            <h2 
+              id="settings-modal-title" 
+              className="text-xl font-light text-white uppercase tracking-widest"
+            >
               Settings
             </h2>
           </div>
           <button
+            ref={closeButtonRef}
             onClick={handleClose}
-            className="text-gray-600 hover:text-white transition-colors"
+            className="text-gray-600 hover:text-white transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-black rounded p-1"
             aria-label="閉じる"
           >
             <XMarkIcon className="w-6 h-6" />
@@ -102,15 +200,51 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
 
         {/* コンテンツ */}
         <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-6 touch-pan-y">
+          {/* 未保存の変更警告 */}
+          {showUnsavedWarning && (
+            <div className="bg-yellow-900/20 border border-yellow-600/50 p-4 space-y-3 animate-fadeIn">
+              <div className="flex items-start gap-3">
+                <XCircleIcon className="w-6 h-6 text-yellow-500 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-yellow-200 text-sm font-light uppercase tracking-wider">
+                    Unsaved Changes
+                  </p>
+                  <p className="text-yellow-300/80 text-xs mt-1">
+                    You have unsaved changes. Do you want to close without saving?
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-3 justify-end">
+                <button
+                  onClick={() => setShowUnsavedWarning(false)}
+                  className="px-4 py-2 border border-gray-700 text-gray-400 hover:text-white transition-colors duration-200 uppercase tracking-wider text-xs focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-black"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    setShowUnsavedWarning(false);
+                    setShowApiKey(false);
+                    onClose();
+                  }}
+                  className="px-4 py-2 bg-yellow-600 text-white hover:bg-yellow-500 transition-colors duration-200 uppercase tracking-wider text-xs focus:outline-none focus:ring-2 focus:ring-yellow-400 focus:ring-offset-2 focus:ring-offset-black"
+                >
+                  Close Without Saving
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* AI Provider選択 */}
           <div className="space-y-3">
-            <label className="text-white font-light uppercase tracking-wider text-sm">
+            <label htmlFor="ai-provider-select" className="text-white font-light uppercase tracking-wider text-sm block">
               AI Provider
             </label>
             <select
+              id="ai-provider-select"
               value={settings.aiProvider}
               onChange={(e) => setSettings({ ...settings, aiProvider: e.target.value as 'openai' | 'gemini' })}
-              className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-gray-500"
+              className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
             >
               <option value="openai">OpenAI</option>
               <option value="gemini">Google Gemini</option>
@@ -125,7 +259,7 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
             <>
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <label className="text-white font-light uppercase tracking-wider text-sm">
+              <label htmlFor="openai-api-key" className="text-white font-light uppercase tracking-wider text-sm">
                 OpenAI API Key
               </label>
               <span className="text-xs text-gray-600 uppercase">
@@ -134,34 +268,38 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
             </div>
             <div className="relative">
               <input
+                id="openai-api-key"
                 type={showApiKey ? "text" : "password"}
                 value={settings.openaiApiKey}
                 onChange={(e) => setSettings({ ...settings, openaiApiKey: e.target.value })}
                 placeholder="sk-..."
-                className="w-full bg-black border border-gray-700 text-white px-4 py-3 pr-24 text-sm focus:outline-none focus:border-gray-500"
+                className="w-full bg-black border border-gray-700 text-white px-4 py-3 pr-24 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
+                aria-required="true"
               />
               <button
                 type="button"
                 onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-600 hover:text-white transition-colors px-2 py-1 border border-gray-700 uppercase tracking-wider"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-600 hover:text-white transition-colors duration-200 px-2 py-1 border border-gray-700 hover:border-gray-500 uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-white"
+                aria-label={showApiKey ? "Hide API key" : "Show API key"}
               >
                 {showApiKey ? "Hide" : "Show"}
               </button>
             </div>
             <p className="text-xs text-gray-600">
-              Get your key from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors">platform.openai.com</a>
+              Get your key from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors duration-200 underline decoration-gray-700 hover:decoration-white">platform.openai.com</a>
             </p>
           </div>
 
           {/* OpenAI モデル選択 */}
           <div className="space-y-3">
-            <label className="text-white font-light uppercase tracking-wider text-sm">
+            <label htmlFor="openai-model-select" className="text-white font-light uppercase tracking-wider text-sm block">
               OpenAI Model Selection
             </label>
             <select
+              id="openai-model-select"
               value={settings.openaiModel}
               onChange={(e) => setSettings({ ...settings, openaiModel: e.target.value })}
-              className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-gray-500"
+              className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
             >
               <optgroup label="GPT-5シリーズ（最新）">
                 <option value="gpt-5">GPT-5 ⭐ (最新・推奨)</option>
@@ -195,7 +333,7 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
             <>
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <label className="text-white font-light uppercase tracking-wider text-sm">
+              <label htmlFor="gemini-api-key" className="text-white font-light uppercase tracking-wider text-sm">
                 Google Gemini API Key
               </label>
               <span className="text-xs text-gray-600 uppercase">
@@ -204,34 +342,38 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
             </div>
             <div className="relative">
               <input
+                id="gemini-api-key"
                 type={showApiKey ? "text" : "password"}
                 value={settings.geminiApiKey}
                 onChange={(e) => setSettings({ ...settings, geminiApiKey: e.target.value })}
                 placeholder="AIza..."
-                className="w-full bg-black border border-gray-700 text-white px-4 py-3 pr-24 text-sm focus:outline-none focus:border-gray-500"
+                className="w-full bg-black border border-gray-700 text-white px-4 py-3 pr-24 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
+                aria-required="true"
               />
               <button
                 type="button"
                 onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-600 hover:text-white transition-colors px-2 py-1 border border-gray-700 uppercase tracking-wider"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-600 hover:text-white transition-colors duration-200 px-2 py-1 border border-gray-700 hover:border-gray-500 uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-white"
+                aria-label={showApiKey ? "Hide API key" : "Show API key"}
               >
                 {showApiKey ? "Hide" : "Show"}
               </button>
             </div>
             <p className="text-xs text-gray-600">
-              Get your key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors">aistudio.google.com</a>
+              Get your key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors duration-200 underline decoration-gray-700 hover:decoration-white">aistudio.google.com</a>
             </p>
           </div>
 
           {/* Gemini モデル選択 */}
           <div className="space-y-3">
-            <label className="text-white font-light uppercase tracking-wider text-sm">
+            <label htmlFor="gemini-model-select" className="text-white font-light uppercase tracking-wider text-sm block">
               Gemini Model Selection
             </label>
             <select
+              id="gemini-model-select"
               value={settings.geminiModel}
               onChange={(e) => setSettings({ ...settings, geminiModel: e.target.value })}
-              className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-gray-500"
+              className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
             >
               <optgroup label="Gemini 2.5 (Latest)">
                 <option value="gemini-2.5-flash">Gemini 2.5 Flash ⭐ (Latest)</option>
@@ -258,22 +400,27 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
 
           {/* タイプライター速度 */}
           <div className="space-y-3">
-            <label className="text-white font-light uppercase tracking-wider text-sm">
+            <label htmlFor="typewriter-speed" className="text-white font-light uppercase tracking-wider text-sm block">
               Typewriter Speed
             </label>
             <div className="space-y-2">
               <input
+                id="typewriter-speed"
                 type="range"
                 min="10"
                 max="100"
                 step="5"
                 value={settings.typewriterSpeed}
                 onChange={(e) => setSettings({ ...settings, typewriterSpeed: Number(e.target.value) })}
-                className="w-full accent-gray-400"
+                className="w-full accent-gray-400 focus:outline-none focus:ring-2 focus:ring-white"
+                aria-valuemin={10}
+                aria-valuemax={100}
+                aria-valuenow={settings.typewriterSpeed}
+                aria-label="Typewriter speed in milliseconds"
               />
               <div className="flex items-center justify-between text-xs text-gray-600 uppercase tracking-wider">
                 <span>Fast (10ms)</span>
-                <span className="text-white">
+                <span className="text-white font-medium">
                   {settings.typewriterSpeed}ms
                 </span>
                 <span>Slow (100ms)</span>
@@ -286,16 +433,17 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
 
           {/* MCP Endpoint */}
           <div className="space-y-3">
-            <label className="text-white font-light uppercase tracking-wider text-sm">
+            <label htmlFor="mcp-endpoint" className="text-white font-light uppercase tracking-wider text-sm block">
               MCP Endpoint
               <span className="text-xs text-gray-600 normal-case ml-2">(Optional)</span>
             </label>
             <input
+              id="mcp-endpoint"
               type="text"
               value={settings.mcpEndpoint}
               onChange={(e) => setSettings({ ...settings, mcpEndpoint: e.target.value })}
               placeholder="ws://localhost:8080"
-              className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-gray-500"
+              className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
             />
             <p className="text-xs text-gray-600">
               Model Context Protocol WebSocket endpoint (future implementation)
@@ -304,14 +452,15 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
 
           {/* 自動スクロール */}
           <div className="space-y-3">
-            <label className="flex items-center gap-3 cursor-pointer group">
+            <label htmlFor="auto-scroll-checkbox" className="flex items-center gap-3 cursor-pointer group">
               <input
+                id="auto-scroll-checkbox"
                 type="checkbox"
                 checked={settings.autoScroll}
                 onChange={(e) => setSettings({ ...settings, autoScroll: e.target.checked })}
-                className="w-5 h-5 accent-gray-400"
+                className="w-5 h-5 accent-gray-400 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-black"
               />
-              <span className="text-white font-light uppercase tracking-wider text-sm group-hover:text-gray-400 transition-colors">
+              <span className="text-white font-light uppercase tracking-wider text-sm group-hover:text-gray-400 transition-colors duration-200">
                 Auto Scroll
               </span>
             </label>
@@ -322,27 +471,32 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
 
           {/* 詳細設定 */}
           <details className="border-t border-gray-800 pt-4">
-            <summary className="text-white font-light uppercase tracking-wider text-sm cursor-pointer hover:text-gray-400 transition-colors">
+            <summary className="text-white font-light uppercase tracking-wider text-sm cursor-pointer hover:text-gray-400 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-black rounded px-2 py-1 -mx-2">
               Advanced Settings
             </summary>
             <div className="mt-4 space-y-4">
               {/* Temperature */}
               <div className="space-y-2">
-                <label className="text-white font-light uppercase tracking-wider text-sm">
+                <label htmlFor="temperature-slider" className="text-white font-light uppercase tracking-wider text-sm block">
                   Temperature (Creativity)
                 </label>
                 <input
+                  id="temperature-slider"
                   type="range"
                   min="0"
                   max="2"
                   step="0.1"
                   value={settings.temperature || 0.7}
                   onChange={(e) => setSettings({ ...settings, temperature: Number(e.target.value) })}
-                  className="w-full accent-gray-400"
+                  className="w-full accent-gray-400 focus:outline-none focus:ring-2 focus:ring-white"
+                  aria-valuemin={0}
+                  aria-valuemax={2}
+                  aria-valuenow={settings.temperature || 0.7}
+                  aria-label="Temperature creativity setting"
                 />
                 <div className="flex items-center justify-between text-xs text-gray-600 uppercase tracking-wider">
                   <span>Conservative (0.0)</span>
-                  <span className="text-white">{settings.temperature || 0.7}</span>
+                  <span className="text-white font-medium">{settings.temperature || 0.7}</span>
                   <span>Creative (2.0)</span>
                 </div>
                 <p className="text-xs text-gray-600">
@@ -352,17 +506,18 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
 
               {/* Max Tokens */}
               <div className="space-y-2">
-                <label className="text-white font-light uppercase tracking-wider text-sm">
+                <label htmlFor="max-tokens-input" className="text-white font-light uppercase tracking-wider text-sm block">
                   Max Tokens (max_completion_tokens)
                 </label>
                 <input
+                  id="max-tokens-input"
                   type="number"
                   min="100"
                   max="4000"
                   step="100"
                   value={settings.maxTokens || 1000}
                   onChange={(e) => setSettings({ ...settings, maxTokens: Number(e.target.value) })}
-                  className="w-full bg-black border border-gray-700 text-white px-4 py-2 text-sm focus:outline-none focus:border-gray-500"
+                  className="w-full bg-black border border-gray-700 text-white px-4 py-2 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
                 />
                 <p className="text-xs text-gray-600">
                   Maximum response length. Uses max_completion_tokens for GPT-5/o1
@@ -373,28 +528,35 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
 
           {/* 保存メッセージ */}
           {saveMessage && (
-            <div className={`text-center py-2 uppercase tracking-wider text-sm ${
+            <div className={`flex items-center justify-center gap-2 py-3 px-4 border animate-fadeIn ${
               saveMessage.startsWith("SAVED") 
-                ? "text-white" 
-                : "text-red-500"
+                ? "bg-green-900/20 border-green-600/50 text-green-200" 
+                : "bg-red-900/20 border-red-600/50 text-red-200"
             }`}>
-              {saveMessage}
+              {saveMessage.startsWith("SAVED") ? (
+                <CheckCircleIcon className="w-5 h-5" />
+              ) : (
+                <XCircleIcon className="w-5 h-5" />
+              )}
+              <span className="uppercase tracking-wider text-sm font-light">
+                {saveMessage}
+              </span>
             </div>
           )}
         </div>
 
         {/* フッター */}
-        <div className="flex-shrink-0 bg-black border-t border-gray-700 px-6 py-4 flex items-center justify-between">
+        <div className="flex-shrink-0 bg-black border-t border-gray-700 px-6 py-4 flex items-center justify-between gap-4">
           <button
             onClick={handleClose}
-            className="px-6 py-2 border border-gray-700 text-gray-600 hover:text-white transition-colors uppercase tracking-wider text-sm"
+            className="px-6 py-2.5 border border-gray-700 text-gray-600 hover:text-white hover:border-gray-500 transition-all duration-200 uppercase tracking-wider text-sm focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-black"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={isSaving || (settings.aiProvider === 'openai' ? !settings.openaiApiKey.trim() : !settings.geminiApiKey.trim())}
-            className="px-8 py-2 bg-white text-black hover:bg-gray-300 border border-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm"
+            className="px-8 py-2.5 bg-white text-black hover:bg-gray-200 border border-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white uppercase tracking-wider text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-black"
           >
             {isSaving ? "Saving..." : "Save"}
           </button>
