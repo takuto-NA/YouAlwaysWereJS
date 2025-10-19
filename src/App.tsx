@@ -2,13 +2,13 @@
  * チャットアプリケーションのメインコンポーネント
  * LangGraphとOpenAI APIを使用してMCP経由で対話
  */
-import { useState, useRef, useEffect } from "react";
-import { Cog6ToothIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { Cog6ToothIcon } from "@heroicons/react/24/outline";
 import ChatMessage from "./components/ChatMessage";
 import ChatInput from "./components/ChatInput";
 import SettingsModal from "./components/SettingsModal";
 import { Message, ChatState } from "./types/chat";
-import { openAIService } from "./services/ai";
+// import { openAIService } from "./services/ai"; // 将来使用するため保持
 import { logError, logDebug } from "./utils/errorHandler";
 import { loadSettings, hasApiKey, AppSettings } from "./utils/storage";
 import { ANIMATION_DELAYS } from "./constants/animations";
@@ -29,11 +29,11 @@ function App() {
 
     // APIキーが設定されているかチェック
     const hasKey = hasApiKey();
-    
+
     const initialMessage: Message = {
       id: "system-1",
       role: "system",
-      content: hasKey 
+      content: hasKey
         ? "システム起動完了。OpenAI API経由でMCPを使用した対話が可能です。"
         : "WARNING: OpenAI APIキーが設定されていません。右上の設定ボタンから設定してください。",
       timestamp: Date.now(),
@@ -45,7 +45,7 @@ function App() {
       isProcessing: false,
     });
 
-    logDebug('App', 'チャットアプリケーション初期化完了', {
+    logDebug("App", "チャットアプリケーション初期化完了", {
       environment: import.meta.env.MODE,
       hasApiKey: hasKey,
       settings: savedSettings,
@@ -54,7 +54,7 @@ function App() {
 
   const handleSettingsSave = (newSettings: AppSettings) => {
     setSettings(newSettings);
-    
+
     // APIキーが新たに設定された場合、メッセージを追加
     const successMessage: Message = {
       id: `system-${Date.now()}`,
@@ -64,27 +64,28 @@ function App() {
       isTyping: false,
     };
 
-    setChatState(prev => ({
+    setChatState((prev) => ({
       ...prev,
       messages: [...prev.messages, successMessage],
     }));
   };
 
-  const scrollToBottom = () => {
+  const scrollToBottom = useCallback(() => {
     if (settings.autoScroll) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
-  };
+  }, [settings.autoScroll]);
 
   useEffect(() => {
     scrollToBottom();
-  }, [chatState.messages, settings.autoScroll]);
+  }, [chatState.messages, scrollToBottom]);
 
   const handleSendMessage = async (content: string) => {
     // APIキーチェック（プロバイダーに応じて）
-    const currentApiKey = settings.aiProvider === 'openai' ? settings.openaiApiKey : settings.geminiApiKey;
-    const providerName = settings.aiProvider === 'openai' ? 'OpenAI' : 'Gemini';
-    
+    const currentApiKey =
+      settings.aiProvider === "openai" ? settings.openaiApiKey : settings.geminiApiKey;
+    const providerName = settings.aiProvider === "openai" ? "OpenAI" : "Gemini";
+
     if (!currentApiKey) {
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
@@ -93,7 +94,7 @@ function App() {
         timestamp: Date.now(),
         isTyping: false,
       };
-      setChatState(prev => ({
+      setChatState((prev) => ({
         ...prev,
         messages: [...prev.messages, errorMessage],
       }));
@@ -108,12 +109,12 @@ function App() {
       timestamp: Date.now(),
     };
 
-    logDebug('Chat', 'ユーザーメッセージ受信', {
+    logDebug("Chat", "ユーザーメッセージ受信", {
       messageLength: content.length,
       totalMessages: chatState.messages.length + 1,
     });
 
-    setChatState(prev => ({
+    setChatState((prev) => ({
       ...prev,
       messages: [...prev.messages, userMessage],
       isProcessing: true,
@@ -121,14 +122,16 @@ function App() {
     }));
 
     try {
-      logDebug('Chat', 'OpenAI APIにリクエスト送信中', {
+      logDebug("Chat", "OpenAI APIにリクエスト送信中", {
         messageCount: chatState.messages.length + 1,
       });
 
       // 設定からプロバイダー、APIキー、モデルを使用してAI APIを呼び出し
-      const currentApiKey = settings.aiProvider === 'openai' ? settings.openaiApiKey : settings.geminiApiKey;
-      const currentModel = settings.aiProvider === 'openai' ? settings.openaiModel : settings.geminiModel;
-      
+      const currentApiKey =
+        settings.aiProvider === "openai" ? settings.openaiApiKey : settings.geminiApiKey;
+      const currentModel =
+        settings.aiProvider === "openai" ? settings.openaiModel : settings.geminiModel;
+
       const { createAIService } = await import("./services/ai/openai");
       const customService = createAIService(
         settings.aiProvider,
@@ -137,11 +140,11 @@ function App() {
         settings.temperature,
         settings.maxTokens
       );
-      
-      const response = await customService.chat([
-        ...chatState.messages,
-        userMessage,
-      ], settings.aiProvider);
+
+      const response = await customService.chat(
+        [...chatState.messages, userMessage],
+        settings.aiProvider
+      );
 
       // AIレスポンスを追加（タイプライター効果を有効化）
       const assistantMessage: Message = {
@@ -152,29 +155,29 @@ function App() {
         isTyping: true,
       };
 
-      setChatState(prev => ({
+      setChatState((prev) => ({
         ...prev,
         messages: [...prev.messages, assistantMessage],
         isProcessing: false,
       }));
 
-      logDebug('Chat', 'AI応答を受信しました', {
+      logDebug("Chat", "AI応答を受信しました", {
         responseLength: response.length,
       });
     } catch (error) {
-      logError('Chat', error, {
-        attemptedAction: 'handleSendMessage',
+      logError("Chat", error, {
+        attemptedAction: "handleSendMessage",
       });
 
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         role: "system",
-        content: `エラー: ${error instanceof Error ? error.message : '不明なエラーが発生しました'}`,
+        content: `エラー: ${error instanceof Error ? error.message : "不明なエラーが発生しました"}`,
         timestamp: Date.now(),
         isTyping: false,
       };
 
-      setChatState(prev => ({
+      setChatState((prev) => ({
         ...prev,
         messages: [...prev.messages, errorMessage],
         isProcessing: false,
@@ -209,9 +212,7 @@ function App() {
 
       {/* ヘッダー - シンプルなSF風 */}
       <div className="bg-black border-b border-gray-800 px-6 py-3 flex items-center justify-between flex-shrink-0 animate-fadeIn">
-        <div className="text-white text-lg font-light tracking-widest">
-          AI INTERFACE
-        </div>
+        <div className="text-white text-lg font-light tracking-widest">AI INTERFACE</div>
         <div className="flex items-center gap-6">
           <button
             onClick={() => setIsSettingsOpen(true)}
@@ -238,24 +239,27 @@ function App() {
             {chatState.messages.map((message) => (
               <ChatMessage key={message.id} message={message} />
             ))}
-               {chatState.isProcessing && (
-                 <div className="text-gray-500 text-sm animate-pulse flex items-center gap-2 my-4">
-                   <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
-                   <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: ANIMATION_DELAYS.SHORT}}></div>
-                   <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: ANIMATION_DELAYS.MEDIUM}}></div>
-                   <span className="ml-2">処理中</span>
-          </div>
-               )}
+            {chatState.isProcessing && (
+              <div className="text-gray-500 text-sm animate-pulse flex items-center gap-2 my-4">
+                <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
+                <div
+                  className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                  style={{ animationDelay: ANIMATION_DELAYS.SHORT }}
+                ></div>
+                <div
+                  className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"
+                  style={{ animationDelay: ANIMATION_DELAYS.MEDIUM }}
+                ></div>
+                <span className="ml-2">処理中</span>
+              </div>
+            )}
             <div ref={messagesEndRef} />
           </div>
         </div>
 
         {/* 入力エリア */}
         <div className="flex-shrink-0">
-          <ChatInput
-            onSend={handleSendMessage}
-            disabled={chatState.isProcessing}
-          />
+          <ChatInput onSend={handleSendMessage} disabled={chatState.isProcessing} />
         </div>
       </div>
 
@@ -263,14 +267,16 @@ function App() {
       <div className="bg-black border-t border-gray-800 px-6 py-2 text-xs text-gray-600 flex items-center justify-between flex-shrink-0">
         <div className="flex items-center gap-6">
           <span className="uppercase tracking-wider">Messages: {chatState.messages.length}</span>
-          <span className={`flex items-center gap-2 ${chatState.isProcessing ? "text-gray-400" : "text-gray-500"}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${chatState.isProcessing ? "bg-gray-400 animate-pulse" : "bg-gray-600"}`}></span>
+          <span
+            className={`flex items-center gap-2 ${chatState.isProcessing ? "text-gray-400" : "text-gray-500"}`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${chatState.isProcessing ? "bg-gray-400 animate-pulse" : "bg-gray-600"}`}
+            ></span>
             {chatState.isProcessing ? "Processing" : "Ready"}
           </span>
         </div>
-        <div className="uppercase tracking-wider">
-          {chatState.error ? "Error" : "Online"}
-        </div>
+        <div className="uppercase tracking-wider">{chatState.error ? "Error" : "Online"}</div>
       </div>
     </div>
   );

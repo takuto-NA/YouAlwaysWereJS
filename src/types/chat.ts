@@ -20,4 +20,3 @@ export interface ChatAction {
   type: "send_message" | "clear_history" | "set_processing" | "add_message" | "set_error";
   payload?: unknown;
 }
-

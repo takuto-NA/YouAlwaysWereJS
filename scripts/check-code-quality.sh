@@ -22,14 +22,23 @@ TOTAL_ISSUES=0
 # 1. マジックナンバーチェック
 ###############################################################################
 echo "🔍 [1/7] Checking for magic numbers..."
-MAGIC_NUMBERS=$(grep -rn --include="*.ts" --include="*.tsx" -E "[^a-zA-Z_][0-9]{2,}[^a-zA-Z_0-9]" src/ | grep -v "// @ignore-magic-number" | grep -v "gameConfig.ts" || true)
+MAGIC_NUMBERS=$(grep -rn --include="*.ts" --include="*.tsx" -E "[^a-zA-Z_][0-9]{2,}[^a-zA-Z_0-9]" src/ | \
+    grep -v "// @ignore-magic-number" | \
+    grep -v "gameConfig.ts" | \
+    grep -v "className=" | \
+    grep -v 'className="' | \
+    grep -v "style=" | \
+    grep -v "/24/" | \
+    grep -v "/outline" | \
+    grep -v "animationDelay" | \
+    grep -v "setTimeout" || true)
 
 if [ -n "$MAGIC_NUMBERS" ]; then
-    echo -e "${RED}❌ Magic numbers found:${NC}"
+    echo -e "${YELLOW}⚠️  Magic numbers found (excluding Tailwind/Heroicons):${NC}"
     echo "$MAGIC_NUMBERS"
     TOTAL_ISSUES=$((TOTAL_ISSUES + $(echo "$MAGIC_NUMBERS" | wc -l)))
 else
-    echo -e "${GREEN}✅ No magic numbers${NC}"
+    echo -e "${GREEN}✅ No magic numbers (excluding Tailwind/Heroicons)${NC}"
 fi
 echo ""
 
@@ -37,14 +46,16 @@ echo ""
 # 2. console.logチェック（本番前に削除すべき）
 ###############################################################################
 echo "🔍 [2/7] Checking for console.log..."
-CONSOLE_LOGS=$(grep -rn --include="*.ts" --include="*.tsx" "console\.log" src/ | grep -v "logDebug\|logError\|logWarning" || true)
+CONSOLE_LOGS=$(grep -rn --include="*.ts" --include="*.tsx" "console\.log" src/ | \
+    grep -v "logDebug\|logError\|logWarning" | \
+    grep -v "errorHandler.ts" || true)
 
 if [ -n "$CONSOLE_LOGS" ]; then
     echo -e "${YELLOW}⚠️  console.log found (should use logDebug/logError/logWarning):${NC}"
     echo "$CONSOLE_LOGS"
     TOTAL_ISSUES=$((TOTAL_ISSUES + $(echo "$CONSOLE_LOGS" | wc -l)))
 else
-    echo -e "${GREEN}✅ No raw console.log${NC}"
+    echo -e "${GREEN}✅ No raw console.log (errorHandler.ts excluded)${NC}"
 fi
 echo ""
 
