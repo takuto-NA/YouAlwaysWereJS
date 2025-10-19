@@ -26,6 +26,7 @@ export default [
         setInterval: "readonly",
         clearInterval: "readonly",
         localStorage: "readonly",
+        navigator: "readonly",
         NodeJS: "readonly",
         HTMLElement: "readonly",
         HTMLDivElement: "readonly",
