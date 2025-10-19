@@ -56,3 +56,12 @@ export interface AISuggestion {
   reasoning: string;
   confidence: number;
 }
+
+// Display mode types for chat interface
+export type DisplayMode = "normal" | "novel" | "debug";
+
+export interface DisplaySettings {
+  mode: DisplayMode;
+  showTimestamps: boolean;
+  showDebugInfo: boolean;
+}

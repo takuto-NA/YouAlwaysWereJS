@@ -5,9 +5,11 @@
 import { DEFAULT_TYPEWRITER_SPEED_MS } from "../constants/typewriter";
 import { PromptSettings } from "../types/prompt";
 import { DEFAULT_PROMPT_SETTINGS } from "../constants/prompts";
+import { DisplayMode, DisplaySettings } from "../types/game";
 
 const STORAGE_KEY = "chat_app_settings";
 const PROMPT_STORAGE_KEY = "chat_app_prompts";
+const DISPLAY_STORAGE_KEY = "chat_app_display";
 
 export type AIProvider = "openai" | "gemini";
 
@@ -158,4 +160,46 @@ export function loadPromptSettings(): PromptSettings {
  */
 export function resetPromptSettings(): void {
   localStorage.removeItem(PROMPT_STORAGE_KEY);
+}
+
+const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
+  mode: "normal",
+  showTimestamps: false,
+  showDebugInfo: false,
+};
+
+/**
+ * 表示設定をローカルストレージに保存
+ */
+export function saveDisplaySettings(settings: Partial<DisplaySettings>): void {
+  try {
+    const currentSettings = loadDisplaySettings();
+    const newSettings = { ...currentSettings, ...settings };
+    localStorage.setItem(DISPLAY_STORAGE_KEY, JSON.stringify(newSettings));
+  } catch (error) {
+    console.error("表示設定の保存に失敗しました:", error);
+  }
+}
+
+/**
+ * 表示設定をローカルストレージから読み込み
+ */
+export function loadDisplaySettings(): DisplaySettings {
+  try {
+    const stored = localStorage.getItem(DISPLAY_STORAGE_KEY);
+    if (!stored) {
+      return DEFAULT_DISPLAY_SETTINGS;
+    }
+    return { ...DEFAULT_DISPLAY_SETTINGS, ...JSON.parse(stored) };
+  } catch (error) {
+    console.error("表示設定の読み込みに失敗しました:", error);
+    return DEFAULT_DISPLAY_SETTINGS;
+  }
+}
+
+/**
+ * 表示設定をリセット
+ */
+export function resetDisplaySettings(): void {
+  localStorage.removeItem(DISPLAY_STORAGE_KEY);
 }

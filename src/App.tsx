@@ -3,16 +3,18 @@
  * LangGraphとOpenAI APIを使用してMCP経由で対話
  */
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Cog6ToothIcon, SparklesIcon } from "@heroicons/react/24/outline";
+import { Cog6ToothIcon, SparklesIcon, RectangleStackIcon } from "@heroicons/react/24/outline";
 import ChatMessage from "./components/ChatMessage";
 import ChatInput from "./components/ChatInput";
 import SettingsModal from "./components/SettingsModal";
 import PromptEditorModal from "./components/PromptEditorModal";
+import DisplaySettingsModal from "./components/DisplaySettingsModal";
 import { Message, ChatState } from "./types/chat";
 import { PromptSettings } from "./types/prompt";
+import { DisplaySettings } from "./types/game";
 // import { openAIService } from "./services/ai"; // 将来使用するため保持
 import { logError, logDebug } from "./utils/errorHandler";
-import { loadSettings, hasApiKey, AppSettings, loadPromptSettings } from "./utils/storage";
+import { loadSettings, hasApiKey, AppSettings, loadPromptSettings, loadDisplaySettings } from "./utils/storage";
 import { buildSystemPrompt } from "./utils/promptBuilder";
 import { ANIMATION_DELAYS } from "./constants/animations";
 
@@ -23,8 +25,10 @@ function App() {
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isPromptEditorOpen, setIsPromptEditorOpen] = useState(false);
+  const [isDisplaySettingsOpen, setIsDisplaySettingsOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(loadSettings());
   const [promptSettings, setPromptSettings] = useState<PromptSettings>(loadPromptSettings());
+  const [displaySettings, setDisplaySettings] = useState<DisplaySettings>(loadDisplaySettings());
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 初期化と設定チェック
@@ -82,6 +86,23 @@ function App() {
       id: `system-${Date.now()}`,
       role: "system",
       content: "SAVED: プロンプト設定を保存しました。",
+      timestamp: Date.now(),
+      isTyping: false,
+    };
+
+    setChatState((prev) => ({
+      ...prev,
+      messages: [...prev.messages, successMessage],
+    }));
+  };
+
+  const handleDisplaySettingsSave = (newDisplaySettings: DisplaySettings) => {
+    setDisplaySettings(newDisplaySettings);
+
+    const successMessage: Message = {
+      id: `system-${Date.now()}`,
+      role: "system",
+      content: `SAVED: 表示モードを「${newDisplaySettings.mode === "normal" ? "通常モード" : newDisplaySettings.mode === "novel" ? "ノベルモード" : "デバッグモード"}」に変更しました。`,
       timestamp: Date.now(),
       isTyping: false,
     };
@@ -252,6 +273,12 @@ function App() {
         onSave={handlePromptSettingsSave}
       />
 
+      <DisplaySettingsModal
+        isOpen={isDisplaySettingsOpen}
+        onClose={() => setIsDisplaySettingsOpen(false)}
+        onSave={handleDisplaySettingsSave}
+      />
+
       {/* ヘッダー - シンプルなSF風 */}
       <div className="bg-black border-b border-gray-800 px-6 py-3 flex items-center justify-between flex-shrink-0 animate-fadeIn">
         <div className="text-white text-lg font-light tracking-widest">AI INTERFACE</div>
@@ -263,6 +290,14 @@ function App() {
             title="Prompt Editor"
           >
             <SparklesIcon className="w-6 h-6" />
+          </button>
+          <button
+            onClick={() => setIsDisplaySettingsOpen(true)}
+            className="text-gray-600 hover:text-white transition-all duration-300 hover:scale-110"
+            aria-label="表示設定を開く"
+            title="Display Settings"
+          >
+            <RectangleStackIcon className="w-6 h-6" />
           </button>
           <button
             onClick={() => setIsSettingsOpen(true)}
@@ -286,9 +321,76 @@ function App() {
         {/* メッセージエリア */}
         <div className="flex-1 overflow-y-auto px-8 py-6 overscroll-contain touch-pan-y">
           <div className="max-w-5xl">
-            {chatState.messages.map((message) => (
-              <ChatMessage key={message.id} message={message} />
-            ))}
+            {/* 通常モード: 全てのメッセージを表示 */}
+            {displaySettings.mode === "normal" &&
+              chatState.messages.map((message) => (
+                <ChatMessage 
+                  key={message.id} 
+                  message={message} 
+                  showTimestamp={displaySettings.showTimestamps}
+                />
+              ))}
+
+            {/* ノベルモード: 最新のアシスタントメッセージのみ表示 */}
+            {displaySettings.mode === "novel" && (() => {
+              // 最新のアシスタントメッセージを取得
+              const latestAssistantMessage = [...chatState.messages]
+                .reverse()
+                .find((msg) => msg.role === "assistant");
+              
+              return latestAssistantMessage ? (
+                <div className="flex flex-col items-center justify-center min-h-full">
+                  <div className="w-full max-w-3xl">
+                    <ChatMessage 
+                      key={latestAssistantMessage.id} 
+                      message={latestAssistantMessage}
+                      showTimestamp={false}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center min-h-full">
+                  <p className="text-gray-600 text-sm uppercase tracking-wider">
+                    Waiting for response...
+                  </p>
+                </div>
+              );
+            })()}
+
+            {/* デバッグモード: 全メッセージ + デバッグ情報 */}
+            {displaySettings.mode === "debug" &&
+              chatState.messages.map((message) => (
+                <div key={message.id} className="space-y-2 mb-4">
+                  <ChatMessage 
+                    message={message}
+                    showTimestamp={true}
+                  />
+                  {displaySettings.showDebugInfo && (
+                    <div className="bg-gray-900/50 border border-gray-800 p-3 text-xs font-mono space-y-1">
+                      <div className="text-gray-500">
+                        <span className="text-gray-600">ID:</span> {message.id}
+                      </div>
+                      <div className="text-gray-500">
+                        <span className="text-gray-600">Role:</span> {message.role}
+                      </div>
+                      <div className="text-gray-500">
+                        <span className="text-gray-600">Timestamp:</span>{" "}
+                        {new Date(message.timestamp).toISOString()}
+                      </div>
+                      <div className="text-gray-500">
+                        <span className="text-gray-600">Length:</span> {message.content.length} chars
+                      </div>
+                      {message.isTyping !== undefined && (
+                        <div className="text-gray-500">
+                          <span className="text-gray-600">Typing:</span>{" "}
+                          {message.isTyping ? "true" : "false"}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+
             {chatState.isProcessing && (
               <div className="text-gray-500 text-sm animate-pulse flex items-center gap-2 my-4">
                 <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
@@ -325,6 +427,19 @@ function App() {
             ></span>
             {chatState.isProcessing ? "Processing" : "Ready"}
           </span>
+          {displaySettings.mode === "debug" && (
+            <>
+              <span className="uppercase tracking-wider">
+                Mode: {displaySettings.mode.toUpperCase()}
+              </span>
+              <span className="uppercase tracking-wider">
+                Provider: {settings.aiProvider.toUpperCase()}
+              </span>
+              <span className="uppercase tracking-wider">
+                Model: {settings.aiProvider === "openai" ? settings.openaiModel : settings.geminiModel}
+              </span>
+            </>
+          )}
         </div>
         <div className="uppercase tracking-wider">{chatState.error ? "Error" : "Online"}</div>
       </div>

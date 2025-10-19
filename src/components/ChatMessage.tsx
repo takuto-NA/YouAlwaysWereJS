@@ -11,9 +11,10 @@ import { ANIMATION_DELAYS } from "../constants/animations";
 interface ChatMessageProps {
   message: Message;
   enableTypewriter?: boolean;
+  showTimestamp?: boolean;
 }
 
-function ChatMessage({ message, enableTypewriter = true }: ChatMessageProps) {
+function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }: ChatMessageProps) {
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
   const isAssistant = message.role === "assistant";
@@ -42,6 +43,11 @@ function ChatMessage({ message, enableTypewriter = true }: ChatMessageProps) {
     return (
       <div className="py-3 mb-4 border-l-2 border-gray-700 pl-4 animate-slideIn">
         <div className="text-gray-500 text-sm uppercase tracking-wider">{textToDisplay}</div>
+        {showTimestamp && (
+          <div className="text-gray-700 text-xs mt-1">
+            {new Date(message.timestamp).toLocaleString()}
+          </div>
+        )}
       </div>
     );
   }
@@ -82,6 +88,13 @@ function ChatMessage({ message, enableTypewriter = true }: ChatMessageProps) {
           {textToDisplay}
           {isTyping && <span className="inline-block ml-1 w-2 h-5 bg-white animate-blink"></span>}
         </div>
+
+        {/* タイムスタンプ */}
+        {showTimestamp && (
+          <div className="text-gray-700 text-xs mt-1">
+            {new Date(message.timestamp).toLocaleString()}
+          </div>
+        )}
       </div>
     </div>
   );
