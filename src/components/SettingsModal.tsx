@@ -20,11 +20,25 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
 
+  // モーダルが開いている時にbodyのスクロールを防ぐ
   useEffect(() => {
     if (isOpen) {
       setSettings(loadSettings());
       setSaveMessage("");
+      // bodyのスクロールを無効化
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+    } else {
+      // bodyのスクロールを復元
+      document.body.style.overflow = 'hidden'; // 元々hiddenなのでhiddenに戻す
+      document.body.style.touchAction = 'none'; // 元々noneなのでnoneに戻す
     }
+    
+    return () => {
+      // クリーンアップ
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+    };
   }, [isOpen]);
 
   const handleSave = () => {
@@ -59,17 +73,18 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden touch-none">
       {/* オーバーレイ */}
       <div 
         className="absolute inset-0 bg-black/90 backdrop-blur-sm"
         onClick={handleClose}
+        onTouchMove={(e) => e.preventDefault()}
       />
       
       {/* モーダル本体 */}
-      <div className="relative z-10 w-full max-w-2xl mx-4 bg-black border border-gray-700 shadow-2xl max-h-[90vh] overflow-y-auto text-left">
+      <div className="relative z-10 w-full max-w-2xl mx-4 bg-black border border-gray-700 shadow-2xl flex flex-col touch-auto" style={{ maxHeight: 'calc(100dvh - 2rem)' }}>
         {/* ヘッダー */}
-        <div className="sticky top-0 bg-black border-b border-gray-700 px-6 py-4 flex items-center justify-between">
+        <div className="flex-shrink-0 bg-black border-b border-gray-700 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Cog6ToothIcon className="w-7 h-7 text-white" />
             <h2 className="text-xl font-light text-white uppercase tracking-widest">
@@ -86,7 +101,7 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
         </div>
 
         {/* コンテンツ */}
-        <div className="p-6 space-y-6">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-6 touch-pan-y">
           {/* OpenAI API設定 */}
           <div className="space-y-3">
             <div className="flex items-center gap-2">
@@ -281,7 +296,7 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
         </div>
 
         {/* フッター */}
-        <div className="sticky bottom-0 bg-black border-t border-gray-700 px-6 py-4 flex items-center justify-between">
+        <div className="flex-shrink-0 bg-black border-t border-gray-700 px-6 py-4 flex items-center justify-between">
           <button
             onClick={handleClose}
             className="px-6 py-2 border border-gray-700 text-gray-600 hover:text-white transition-colors uppercase tracking-wider text-sm"

@@ -192,7 +192,7 @@ function App() {
   };
 
   return (
-    <div className="h-screen w-screen overflow-hidden bg-black flex flex-col">
+    <div className="fixed inset-0 bg-black flex flex-col touch-none">
       {/* 設定モーダル */}
       <SettingsModal
         isOpen={isSettingsOpen}
@@ -224,9 +224,9 @@ function App() {
       </div>
 
       {/* メインチャットエリア */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden touch-auto">
         {/* メッセージエリア */}
-        <div className="flex-1 overflow-y-auto px-8 py-6">
+        <div className="flex-1 overflow-y-auto px-8 py-6 overscroll-contain touch-pan-y">
           <div className="max-w-5xl">
             {chatState.messages.map((message) => (
               <ChatMessage key={message.id} message={message} />
