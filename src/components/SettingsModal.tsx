@@ -102,7 +102,27 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
 
         {/* コンテンツ */}
         <div className="flex-1 overflow-y-auto overscroll-contain p-6 space-y-6 touch-pan-y">
+          {/* AI Provider選択 */}
+          <div className="space-y-3">
+            <label className="text-white font-light uppercase tracking-wider text-sm">
+              AI Provider
+            </label>
+            <select
+              value={settings.aiProvider}
+              onChange={(e) => setSettings({ ...settings, aiProvider: e.target.value as 'openai' | 'gemini' })}
+              className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-gray-500"
+            >
+              <option value="openai">OpenAI</option>
+              <option value="gemini">Google Gemini</option>
+            </select>
+            <p className="text-xs text-gray-600">
+              Choose your preferred AI provider
+            </p>
+          </div>
+
           {/* OpenAI API設定 */}
+          {settings.aiProvider === 'openai' && (
+            <>
           <div className="space-y-3">
             <div className="flex items-center gap-2">
               <label className="text-white font-light uppercase tracking-wider text-sm">
@@ -133,10 +153,10 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
             </p>
           </div>
 
-          {/* モデル選択 */}
+          {/* OpenAI モデル選択 */}
           <div className="space-y-3">
             <label className="text-white font-light uppercase tracking-wider text-sm">
-              Model Selection
+              OpenAI Model Selection
             </label>
             <select
               value={settings.openaiModel}
@@ -167,6 +187,67 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
               GPT-5: Standard / GPT-5-mini: Fast / GPT-5-pro: Maximum Performance
             </p>
           </div>
+            </>
+          )}
+
+          {/* Gemini API設定 */}
+          {settings.aiProvider === 'gemini' && (
+            <>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <label className="text-white font-light uppercase tracking-wider text-sm">
+                Google Gemini API Key
+              </label>
+              <span className="text-xs text-gray-600 uppercase">
+                (Required)
+              </span>
+            </div>
+            <div className="relative">
+              <input
+                type={showApiKey ? "text" : "password"}
+                value={settings.geminiApiKey}
+                onChange={(e) => setSettings({ ...settings, geminiApiKey: e.target.value })}
+                placeholder="AIza..."
+                className="w-full bg-black border border-gray-700 text-white px-4 py-3 pr-24 text-sm focus:outline-none focus:border-gray-500"
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiKey(!showApiKey)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-600 hover:text-white transition-colors px-2 py-1 border border-gray-700 uppercase tracking-wider"
+              >
+                {showApiKey ? "Hide" : "Show"}
+              </button>
+            </div>
+            <p className="text-xs text-gray-600">
+              Get your key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors">aistudio.google.com</a>
+            </p>
+          </div>
+
+          {/* Gemini モデル選択 */}
+          <div className="space-y-3">
+            <label className="text-white font-light uppercase tracking-wider text-sm">
+              Gemini Model Selection
+            </label>
+            <select
+              value={settings.geminiModel}
+              onChange={(e) => setSettings({ ...settings, geminiModel: e.target.value })}
+              className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-gray-500"
+            >
+              <optgroup label="Gemini 2.0">
+                <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Experimental) ⭐</option>
+              </optgroup>
+              <optgroup label="Gemini 1.5">
+                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                <option value="gemini-1.5-flash-8b">Gemini 1.5 Flash-8B (Fast)</option>
+              </optgroup>
+            </select>
+            <p className="text-xs text-gray-600">
+              Gemini 2.0 Flash: Latest model / 1.5 Pro: Best quality / 1.5 Flash: Fast & efficient
+            </p>
+          </div>
+            </>
+          )}
 
           {/* タイプライター速度 */}
           <div className="space-y-3">
@@ -305,7 +386,7 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
           </button>
           <button
             onClick={handleSave}
-            disabled={isSaving || !settings.openaiApiKey.trim()}
+            disabled={isSaving || (settings.aiProvider === 'openai' ? !settings.openaiApiKey.trim() : !settings.geminiApiKey.trim())}
             className="px-8 py-2 bg-white text-black hover:bg-gray-300 border border-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm"
           >
             {isSaving ? "Saving..." : "Save"}

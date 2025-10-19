@@ -6,9 +6,14 @@ import { DEFAULT_TYPEWRITER_SPEED_MS } from "../constants/typewriter";
 
 const STORAGE_KEY = 'chat_app_settings';
 
+export type AIProvider = 'openai' | 'gemini';
+
 export interface AppSettings {
+  aiProvider: AIProvider;
   openaiApiKey: string;
   openaiModel: string;
+  geminiApiKey: string;
+  geminiModel: string;
   typewriterSpeed: number;
   mcpEndpoint: string;
   theme?: 'dark' | 'light';
@@ -18,8 +23,11 @@ export interface AppSettings {
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
+  aiProvider: 'openai',
   openaiApiKey: '',
-  openaiModel: 'gpt-5',
+  openaiModel: 'gpt-4o',
+  geminiApiKey: '',
+  geminiModel: 'gemini-2.0-flash-exp',
   typewriterSpeed: DEFAULT_TYPEWRITER_SPEED_MS,
   mcpEndpoint: 'ws://localhost:8080',
   theme: 'dark',
@@ -86,7 +94,12 @@ export function getSetting<K extends keyof AppSettings>(
  */
 export function hasApiKey(): boolean {
   const settings = loadSettings();
-  return settings.openaiApiKey.length > 0;
+  if (settings.aiProvider === 'openai') {
+    return settings.openaiApiKey.length > 0;
+  } else if (settings.aiProvider === 'gemini') {
+    return settings.geminiApiKey.length > 0;
+  }
+  return false;
 }
 
 /**

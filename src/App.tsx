@@ -81,12 +81,15 @@ function App() {
   }, [chatState.messages, settings.autoScroll]);
 
   const handleSendMessage = async (content: string) => {
-    // APIキーチェック
-    if (!settings.openaiApiKey) {
+    // APIキーチェック（プロバイダーに応じて）
+    const currentApiKey = settings.aiProvider === 'openai' ? settings.openaiApiKey : settings.geminiApiKey;
+    const providerName = settings.aiProvider === 'openai' ? 'OpenAI' : 'Gemini';
+    
+    if (!currentApiKey) {
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         role: "system",
-        content: "WARNING: OpenAI APIキーが設定されていません。右上の設定ボタンから設定してください。",
+        content: `WARNING: ${providerName} APIキーが設定されていません。右上の設定ボタンから設定してください。`,
         timestamp: Date.now(),
         isTyping: false,
       };
@@ -122,11 +125,15 @@ function App() {
         messageCount: chatState.messages.length + 1,
       });
 
-      // 設定からAPIキーとモデルを使用してOpenAI APIを呼び出し
-      const { createOpenAIService } = await import("./services/ai/openai");
-      const customService = createOpenAIService(
-        settings.openaiApiKey,
-        settings.openaiModel,
+      // 設定からプロバイダー、APIキー、モデルを使用してAI APIを呼び出し
+      const currentApiKey = settings.aiProvider === 'openai' ? settings.openaiApiKey : settings.geminiApiKey;
+      const currentModel = settings.aiProvider === 'openai' ? settings.openaiModel : settings.geminiModel;
+      
+      const { createAIService } = await import("./services/ai/openai");
+      const customService = createAIService(
+        settings.aiProvider,
+        currentApiKey,
+        currentModel,
         settings.temperature,
         settings.maxTokens
       );
@@ -134,7 +141,7 @@ function App() {
       const response = await customService.chat([
         ...chatState.messages,
         userMessage,
-      ]);
+      ], settings.aiProvider);
 
       // AIレスポンスを追加（タイプライター効果を有効化）
       const assistantMessage: Message = {

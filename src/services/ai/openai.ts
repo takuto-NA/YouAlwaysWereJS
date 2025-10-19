@@ -74,11 +74,12 @@ export class OpenAIService {
   /**
    * LangGraphワークフローを初期化
    */
-  private initializeWorkflow(): void {
+  private initializeWorkflow(provider: 'openai' | 'gemini', apiKey: string, model: string): void {
     if (!this.workflow) {
       this.workflow = createChatWorkflow(
-        this.apiKey,
-        this.model,
+        provider,
+        apiKey,
+        model,
         this.temperature,
         this.maxTokens
       );
@@ -86,15 +87,19 @@ export class OpenAIService {
   }
 
   /**
-   * LangGraphを使用してOpenAI APIを呼び出す
+   * LangGraphを使用してAI APIを呼び出す（マルチプロバイダー対応）
    */
-  async chat(messages: Message[]): Promise<string> {
+  async chat(messages: Message[], provider: 'openai' | 'gemini' = 'openai'): Promise<string> {
     if (!this.apiKey) {
-      throw new Error("OpenAI APIキーが設定されていません。設定から入力してください。");
+      const providerName = provider === 'openai' ? 'OpenAI' : 'Gemini';
+      throw new Error(`${providerName} APIキーが設定されていません。設定から入力してください。`);
     }
 
     try {
-      logDebug('OpenAI Service', 'LangGraph経由でOpenAIにリクエスト送信', {
+      const providerName = provider === 'openai' ? 'OpenAI' : 'Gemini';
+      
+      logDebug('AI Service', `LangGraph経由で${providerName}にリクエスト送信`, {
+        provider: provider,
         messageCount: messages.length,
         model: this.model,
       });
@@ -108,22 +113,24 @@ export class OpenAIService {
         });
       } catch (mcpError) {
         // MCPエラーは警告として記録し、処理は続行
-        logDebug('OpenAI Service', 'MCP接続スキップ（オプション機能）', { mcpError });
+        logDebug('AI Service', 'MCP接続スキップ（オプション機能）', { mcpError });
       }
 
       // LangGraphワークフローを初期化
-      this.initializeWorkflow();
+      this.initializeWorkflow(provider, this.apiKey, this.model);
 
       // LangGraphワークフローを実行
       const response = await this.workflow!.execute(messages);
 
-      logDebug('OpenAI Service', 'LangGraphから応答を受信', {
+      logDebug('AI Service', `LangGraphから応答を受信 (${providerName})`, {
+        provider: provider,
         responseLength: response.length,
       });
 
       return response;
     } catch (error) {
-      logError('OpenAI Service', error, {
+      logError('AI Service', error, {
+        provider: provider,
         attemptedAction: 'chat',
         messageCount: messages.length,
       });
@@ -143,9 +150,10 @@ export class OpenAIService {
 export const openAIService = new OpenAIService();
 
 /**
- * カスタム設定でOpenAIServiceを作成
+ * カスタム設定でOpenAIServiceを作成（マルチプロバイダー対応）
  */
-export function createOpenAIService(
+export function createAIService(
+  provider: 'openai' | 'gemini',
   apiKey: string,
   model: string,
   temperature?: number,
@@ -160,4 +168,7 @@ export function createOpenAIService(
   }
   return service;
 }
+
+// 後方互換性のためのエイリアス
+export const createOpenAIService = createAIService;
 

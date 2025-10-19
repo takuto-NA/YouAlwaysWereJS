@@ -2,51 +2,92 @@
  * LangGraph Workflow Integration
  * 
  * LangChainを使用してチャット対話を管理:
- * - ChatOpenAI経由でのAPI呼び出し
+ * - ChatOpenAI / ChatGoogleGenerativeAI経由でのAPI呼び出し
  * - メッセージ形式の変換
  * - エラーハンドリング
+ * - マルチプロバイダー対応
  */
 
 import { ChatOpenAI } from "@langchain/openai";
+import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { BaseMessage, HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
 import { Message } from "../../types/chat";
 import { logDebug, logError } from "../../utils/errorHandler";
+import type { AIProvider } from "../../utils/storage";
 
 /**
  * LangChainを使用したチャットワークフロー
  */
 export class LangGraphChatWorkflow {
-  private model: ChatOpenAI;
+  private model: ChatOpenAI | ChatGoogleGenerativeAI;
+  private provider: AIProvider;
 
-  constructor(apiKey: string, modelName: string = "gpt-4o", temperature?: number, maxTokens?: number) {
-    // モデルに応じてパラメータを調整
-    const isGpt5 = modelName.startsWith('gpt-5');
-    const isO1 = modelName.startsWith('o1');
-    
-    // LangChainのChatOpenAIは apiKey または openAIApiKey を受け付ける
-    const modelConfig: Record<string, unknown> = {
-      apiKey: apiKey,  // LangChain v0.3以降は apiKey を推奨
-      model: modelName,  // modelName の代わりに model を使用
-    };
+  constructor(
+    provider: AIProvider,
+    apiKey: string, 
+    modelName: string = "gpt-4o", 
+    temperature?: number, 
+    maxTokens?: number
+  ) {
+    this.provider = provider;
 
-    // GPT-4以前のモデルのみtemperatureをカスタマイズ可能
-    if (!isO1 && !isGpt5 && temperature !== undefined) {
-      modelConfig.temperature = temperature;
+    if (provider === 'openai') {
+      // OpenAIモデルの初期化
+      const isGpt5 = modelName.startsWith('gpt-5');
+      const isO1 = modelName.startsWith('o1');
+      
+      const modelConfig: Record<string, unknown> = {
+        apiKey: apiKey,
+        model: modelName,
+      };
+
+      // GPT-4以前のモデルのみtemperatureをカスタマイズ可能
+      if (!isO1 && !isGpt5 && temperature !== undefined) {
+        modelConfig.temperature = temperature;
+      }
+
+      // トークン制限の設定
+      if (maxTokens !== undefined) {
+        modelConfig.maxTokens = maxTokens;
+      }
+
+      logDebug('LangChain', 'ChatOpenAI初期化', {
+        model: modelName,
+        hasApiKey: !!apiKey,
+        temperature: modelConfig.temperature,
+        maxTokens: modelConfig.maxTokens,
+      });
+
+      this.model = new ChatOpenAI(modelConfig);
+    } else {
+      // Geminiモデルの初期化
+      const modelConfig: {
+        apiKey: string;
+        model: string;
+        temperature?: number;
+        maxOutputTokens?: number;
+      } = {
+        apiKey: apiKey,
+        model: modelName,
+      };
+
+      if (temperature !== undefined) {
+        modelConfig.temperature = temperature;
+      }
+
+      if (maxTokens !== undefined) {
+        modelConfig.maxOutputTokens = maxTokens;  // Geminiは maxOutputTokens を使用
+      }
+
+      logDebug('LangChain', 'ChatGoogleGenerativeAI初期化', {
+        model: modelName,
+        hasApiKey: !!apiKey,
+        temperature: modelConfig.temperature,
+        maxOutputTokens: modelConfig.maxOutputTokens,
+      });
+
+      this.model = new ChatGoogleGenerativeAI(modelConfig);
     }
-
-    // トークン制限の設定
-    if (maxTokens !== undefined) {
-      modelConfig.maxTokens = maxTokens;
-    }
-
-    logDebug('LangChain', 'ChatOpenAI初期化', {
-      model: modelName,
-      hasApiKey: !!apiKey,
-      temperature: modelConfig.temperature,
-      maxTokens: modelConfig.maxTokens,
-    });
-
-    this.model = new ChatOpenAI(modelConfig);
   }
 
   /**
@@ -71,26 +112,31 @@ export class LangGraphChatWorkflow {
    */
   async execute(messages: Message[]): Promise<string> {
     try {
-      logDebug('LangChain', 'メッセージ送信開始', {
+      const providerName = this.provider === 'openai' ? 'OpenAI' : 'Gemini';
+      
+      logDebug('LangChain', `メッセージ送信開始 (${providerName})`, {
+        provider: this.provider,
         messageCount: messages.length,
       });
 
       const langchainMessages = this.convertToLangChainMessages(messages);
 
-      // ChatOpenAIを使用してレスポンスを取得
+      // プロバイダーに応じたモデルでレスポンスを取得
       const response = await this.model.invoke(langchainMessages);
 
       const content = typeof response.content === 'string' 
         ? response.content 
         : JSON.stringify(response.content);
 
-      logDebug('LangChain', 'レスポンス受信完了', {
+      logDebug('LangChain', `レスポンス受信完了 (${providerName})`, {
+        provider: this.provider,
         responseLength: content.length,
       });
 
       return content;
     } catch (error) {
       logError('LangChain', error, {
+        provider: this.provider,
         attemptedAction: 'execute',
         messageCount: messages.length,
       });
@@ -103,10 +149,11 @@ export class LangGraphChatWorkflow {
  * LangGraphワークフローのインスタンスを作成
  */
 export function createChatWorkflow(
+  provider: AIProvider,
   apiKey: string,
   model: string = "gpt-4o",
   temperature?: number,
   maxTokens?: number
 ): LangGraphChatWorkflow {
-  return new LangGraphChatWorkflow(apiKey, model, temperature, maxTokens);
+  return new LangGraphChatWorkflow(provider, apiKey, model, temperature, maxTokens);
 }
