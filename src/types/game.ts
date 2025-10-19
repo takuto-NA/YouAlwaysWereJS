@@ -40,7 +40,7 @@ export interface GameState {
   items: Item[];
 }
 
-export type GameAction = 
+export type GameAction =
   | { type: "move"; direction: "up" | "down" | "left" | "right" }
   | { type: "attack" }
   | { type: "reset" };
@@ -56,6 +56,3 @@ export interface AISuggestion {
   reasoning: string;
   confidence: number;
 }
-
-
-

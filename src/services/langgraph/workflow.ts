@@ -1,6 +1,6 @@
 /**
  * LangGraph Workflow Integration
- * 
+ *
  * LangChainを使用してチャット対話を管理:
  * - ChatOpenAI / ChatGoogleGenerativeAI経由でのAPI呼び出し
  * - メッセージ形式の変換
@@ -24,18 +24,18 @@ export class LangGraphChatWorkflow {
 
   constructor(
     provider: AIProvider,
-    apiKey: string, 
-    modelName: string = "gpt-4o", 
-    temperature?: number, 
+    apiKey: string,
+    modelName: string = "gpt-4o",
+    temperature?: number,
     maxTokens?: number
   ) {
     this.provider = provider;
 
-    if (provider === 'openai') {
+    if (provider === "openai") {
       // OpenAIモデルの初期化
-      const isGpt5 = modelName.startsWith('gpt-5');
-      const isO1 = modelName.startsWith('o1');
-      
+      const isGpt5 = modelName.startsWith("gpt-5");
+      const isO1 = modelName.startsWith("o1");
+
       const modelConfig: Record<string, unknown> = {
         apiKey: apiKey,
         model: modelName,
@@ -51,7 +51,7 @@ export class LangGraphChatWorkflow {
         modelConfig.maxTokens = maxTokens;
       }
 
-      logDebug('LangChain', 'ChatOpenAI初期化', {
+      logDebug("LangChain", "ChatOpenAI初期化", {
         model: modelName,
         hasApiKey: !!apiKey,
         temperature: modelConfig.temperature,
@@ -76,10 +76,10 @@ export class LangGraphChatWorkflow {
       }
 
       if (maxTokens !== undefined) {
-        modelConfig.maxOutputTokens = maxTokens;  // Geminiは maxOutputTokens を使用
+        modelConfig.maxOutputTokens = maxTokens; // Geminiは maxOutputTokens を使用
       }
 
-      logDebug('LangChain', 'ChatGoogleGenerativeAI初期化', {
+      logDebug("LangChain", "ChatGoogleGenerativeAI初期化", {
         model: modelName,
         hasApiKey: !!apiKey,
         temperature: modelConfig.temperature,
@@ -94,14 +94,14 @@ export class LangGraphChatWorkflow {
    * メッセージをLangChain形式に変換
    */
   private convertToLangChainMessages(messages: Message[]): BaseMessage[] {
-    if (this.provider === 'gemini') {
+    if (this.provider === "gemini") {
       // Geminiは最初のシステムメッセージのみを許可
       // それ以外のシステムメッセージはユーザーメッセージに変換
       let hasSystemMessage = false;
-      
-      return messages.map(msg => {
+
+      return messages.map((msg) => {
         const content = msg.content;
-        
+
         if (msg.role === "system") {
           if (!hasSystemMessage) {
             hasSystemMessage = true;
@@ -118,9 +118,9 @@ export class LangGraphChatWorkflow {
       });
     } else {
       // OpenAIは複数のシステムメッセージを許可
-      return messages.map(msg => {
+      return messages.map((msg) => {
         const content = msg.content;
-        
+
         if (msg.role === "system") {
           return new SystemMessage(content);
         } else if (msg.role === "user") {
@@ -137,9 +137,9 @@ export class LangGraphChatWorkflow {
    */
   async execute(messages: Message[]): Promise<string> {
     try {
-      const providerName = this.provider === 'openai' ? 'OpenAI' : 'Gemini';
-      
-      logDebug('LangChain', `メッセージ送信開始 (${providerName})`, {
+      const providerName = this.provider === "openai" ? "OpenAI" : "Gemini";
+
+      logDebug("LangChain", `メッセージ送信開始 (${providerName})`, {
         provider: this.provider,
         messageCount: messages.length,
       });
@@ -149,20 +149,19 @@ export class LangGraphChatWorkflow {
       // プロバイダーに応じたモデルでレスポンスを取得
       const response = await this.model.invoke(langchainMessages);
 
-      const content = typeof response.content === 'string' 
-        ? response.content 
-        : JSON.stringify(response.content);
+      const content =
+        typeof response.content === "string" ? response.content : JSON.stringify(response.content);
 
-      logDebug('LangChain', `レスポンス受信完了 (${providerName})`, {
+      logDebug("LangChain", `レスポンス受信完了 (${providerName})`, {
         provider: this.provider,
         responseLength: content.length,
       });
 
       return content;
     } catch (error) {
-      logError('LangChain', error, {
+      logError("LangChain", error, {
         provider: this.provider,
-        attemptedAction: 'execute',
+        attemptedAction: "execute",
         messageCount: messages.length,
       });
       throw error;

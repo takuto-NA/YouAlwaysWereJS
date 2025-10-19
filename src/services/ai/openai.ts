@@ -74,31 +74,25 @@ export class OpenAIService {
   /**
    * LangGraphワークフローを初期化
    */
-  private initializeWorkflow(provider: 'openai' | 'gemini', apiKey: string, model: string): void {
+  private initializeWorkflow(provider: "openai" | "gemini", apiKey: string, model: string): void {
     if (!this.workflow) {
-      this.workflow = createChatWorkflow(
-        provider,
-        apiKey,
-        model,
-        this.temperature,
-        this.maxTokens
-      );
+      this.workflow = createChatWorkflow(provider, apiKey, model, this.temperature, this.maxTokens);
     }
   }
 
   /**
    * LangGraphを使用してAI APIを呼び出す（マルチプロバイダー対応）
    */
-  async chat(messages: Message[], provider: 'openai' | 'gemini' = 'openai'): Promise<string> {
+  async chat(messages: Message[], provider: "openai" | "gemini" = "openai"): Promise<string> {
     if (!this.apiKey) {
-      const providerName = provider === 'openai' ? 'OpenAI' : 'Gemini';
+      const providerName = provider === "openai" ? "OpenAI" : "Gemini";
       throw new Error(`${providerName} APIキーが設定されていません。設定から入力してください。`);
     }
 
     try {
-      const providerName = provider === 'openai' ? 'OpenAI' : 'Gemini';
-      
-      logDebug('AI Service', `LangGraph経由で${providerName}にリクエスト送信`, {
+      const providerName = provider === "openai" ? "OpenAI" : "Gemini";
+
+      logDebug("AI Service", `LangGraph経由で${providerName}にリクエスト送信`, {
         provider: provider,
         messageCount: messages.length,
         model: this.model,
@@ -107,13 +101,13 @@ export class OpenAIService {
       // MCP経由でコンテキストを送信
       try {
         await mcpClient.connect();
-        await mcpClient.request('context_update', {
+        await mcpClient.request("context_update", {
           messages: messages,
           timestamp: Date.now(),
         });
       } catch (mcpError) {
         // MCPエラーは警告として記録し、処理は続行
-        logDebug('AI Service', 'MCP接続スキップ（オプション機能）', { mcpError });
+        logDebug("AI Service", "MCP接続スキップ（オプション機能）", { mcpError });
       }
 
       // LangGraphワークフローを初期化
@@ -122,16 +116,16 @@ export class OpenAIService {
       // LangGraphワークフローを実行
       const response = await this.workflow!.execute(messages);
 
-      logDebug('AI Service', `LangGraphから応答を受信 (${providerName})`, {
+      logDebug("AI Service", `LangGraphから応答を受信 (${providerName})`, {
         provider: provider,
         responseLength: response.length,
       });
 
       return response;
     } catch (error) {
-      logError('AI Service', error, {
+      logError("AI Service", error, {
         provider: provider,
-        attemptedAction: 'chat',
+        attemptedAction: "chat",
         messageCount: messages.length,
       });
       throw error;
@@ -153,7 +147,7 @@ export const openAIService = new OpenAIService();
  * カスタム設定でOpenAIServiceを作成（マルチプロバイダー対応）
  */
 export function createAIService(
-  provider: 'openai' | 'gemini',
+  provider: "openai" | "gemini",
   apiKey: string,
   model: string,
   temperature?: number,
@@ -171,4 +165,3 @@ export function createAIService(
 
 // 後方互換性のためのエイリアス
 export const createOpenAIService = createAIService;
-

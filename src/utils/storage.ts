@@ -4,9 +4,9 @@
  */
 import { DEFAULT_TYPEWRITER_SPEED_MS } from "../constants/typewriter";
 
-const STORAGE_KEY = 'chat_app_settings';
+const STORAGE_KEY = "chat_app_settings";
 
-export type AIProvider = 'openai' | 'gemini';
+export type AIProvider = "openai" | "gemini";
 
 export interface AppSettings {
   aiProvider: AIProvider;
@@ -16,21 +16,21 @@ export interface AppSettings {
   geminiModel: string;
   typewriterSpeed: number;
   mcpEndpoint: string;
-  theme?: 'dark' | 'light';
+  theme?: "dark" | "light";
   autoScroll: boolean;
   temperature?: number;
   maxTokens?: number;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
-  aiProvider: 'openai',
-  openaiApiKey: '',
-  openaiModel: 'gpt-4o',
-  geminiApiKey: '',
-  geminiModel: 'gemini-2.5-flash',
+  aiProvider: "openai",
+  openaiApiKey: "",
+  openaiModel: "gpt-4o",
+  geminiApiKey: "",
+  geminiModel: "gemini-2.5-flash",
   typewriterSpeed: DEFAULT_TYPEWRITER_SPEED_MS,
-  mcpEndpoint: 'ws://localhost:8080',
-  theme: 'dark',
+  mcpEndpoint: "ws://localhost:8080",
+  theme: "dark",
   autoScroll: true,
   temperature: 0.7,
   maxTokens: 1000,
@@ -45,8 +45,8 @@ export function saveSettings(settings: Partial<AppSettings>): void {
     const newSettings = { ...currentSettings, ...settings };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(newSettings));
   } catch (error) {
-    console.error('設定の保存に失敗しました:', error);
-    throw new Error('設定の保存に失敗しました');
+    console.error("設定の保存に失敗しました:", error);
+    throw new Error("設定の保存に失敗しました");
   }
 }
 
@@ -62,7 +62,7 @@ export function loadSettings(): AppSettings {
     const parsed = JSON.parse(stored);
     return { ...DEFAULT_SETTINGS, ...parsed };
   } catch (error) {
-    console.error('設定の読み込みに失敗しました:', error);
+    console.error("設定の読み込みに失敗しました:", error);
     return DEFAULT_SETTINGS;
   }
 }
@@ -74,17 +74,15 @@ export function resetSettings(): void {
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch (error) {
-    console.error('設定のリセットに失敗しました:', error);
-    throw new Error('設定のリセットに失敗しました');
+    console.error("設定のリセットに失敗しました:", error);
+    throw new Error("設定のリセットに失敗しました");
   }
 }
 
 /**
  * 特定の設定項目を取得
  */
-export function getSetting<K extends keyof AppSettings>(
-  key: K
-): AppSettings[K] {
+export function getSetting<K extends keyof AppSettings>(key: K): AppSettings[K] {
   const settings = loadSettings();
   return settings[key];
 }
@@ -94,9 +92,9 @@ export function getSetting<K extends keyof AppSettings>(
  */
 export function hasApiKey(): boolean {
   const settings = loadSettings();
-  if (settings.aiProvider === 'openai') {
+  if (settings.aiProvider === "openai") {
     return settings.openaiApiKey.length > 0;
-  } else if (settings.aiProvider === 'gemini') {
+  } else if (settings.aiProvider === "gemini") {
     return settings.geminiApiKey.length > 0;
   }
   return false;
@@ -118,8 +116,7 @@ export function importSettings(json: string): void {
     const settings = JSON.parse(json);
     saveSettings(settings);
   } catch (error) {
-    console.error('設定のインポートに失敗しました:', error);
-    throw new Error('無効な設定ファイルです');
+    console.error("設定のインポートに失敗しました:", error);
+    throw new Error("無効な設定ファイルです");
   }
 }
-

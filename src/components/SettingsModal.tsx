@@ -2,8 +2,13 @@
  * 設定モーダルコンポーネント
  * APIキーやアプリケーション設定を管理
  */
-import { useState, useEffect, useRef } from "react";
-import { Cog6ToothIcon, XMarkIcon, CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/outline";
+import { useState, useEffect, useRef, useCallback } from "react";
+import {
+  Cog6ToothIcon,
+  XMarkIcon,
+  CheckCircleIcon,
+  XCircleIcon,
+} from "@heroicons/react/24/outline";
 import { AppSettings, loadSettings, saveSettings } from "../utils/storage";
 import { logDebug } from "../utils/errorHandler";
 import { SAVE_MESSAGE_TIMEOUT_MS } from "../constants/animations";
@@ -25,9 +30,9 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   // 設定が変更されたかどうかを確認
-  const hasUnsavedChanges = () => {
+  const hasUnsavedChanges = useCallback(() => {
     return JSON.stringify(settings) !== JSON.stringify(originalSettings);
-  };
+  }, [settings, originalSettings]);
 
   // モーダルが開いている時にbodyのスクロールを防ぐ
   useEffect(() => {
@@ -38,43 +43,50 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
       setSaveMessage("");
       setShowUnsavedWarning(false);
       // bodyのスクロールを無効化
-      document.body.style.overflow = 'hidden';
-      document.body.style.touchAction = 'none';
-      
+      document.body.style.overflow = "hidden";
+      document.body.style.touchAction = "none";
+
       // フォーカスをモーダルに移動
       setTimeout(() => {
         closeButtonRef.current?.focus();
       }, 100);
     } else {
       // bodyのスクロールを復元
-      document.body.style.overflow = 'hidden'; // 元々hiddenなのでhiddenに戻す
-      document.body.style.touchAction = 'none'; // 元々noneなのでnoneに戻す
+      document.body.style.overflow = "hidden"; // 元々hiddenなのでhiddenに戻す
+      document.body.style.touchAction = "none"; // 元々noneなのでnoneに戻す
     }
-    
+
     return () => {
       // クリーンアップ
-      document.body.style.overflow = 'hidden';
-      document.body.style.touchAction = 'none';
+      document.body.style.overflow = "hidden";
+      document.body.style.touchAction = "none";
     };
   }, [isOpen]);
 
   // Escキーでモーダルを閉じる
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && isOpen) {
+      if (e.key === "Escape" && isOpen) {
         e.preventDefault();
-        handleClose();
+        // 未保存の変更があるか確認
+        if (hasUnsavedChanges() && !showUnsavedWarning) {
+          setShowUnsavedWarning(true);
+          return;
+        }
+        setShowApiKey(false);
+        setShowUnsavedWarning(false);
+        onClose();
       }
     };
 
     if (isOpen) {
-      document.addEventListener('keydown', handleKeyDown);
+      document.addEventListener("keydown", handleKeyDown);
     }
 
     return () => {
-      document.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen, settings, originalSettings]);
+  }, [isOpen, hasUnsavedChanges, showUnsavedWarning, onClose]);
 
   // フォーカストラップ
   useEffect(() => {
@@ -88,7 +100,7 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
     const lastElement = focusableElements[focusableElements.length - 1];
 
     const handleTabKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Tab') return;
+      if (e.key !== "Tab") return;
 
       if (e.shiftKey) {
         if (document.activeElement === firstElement) {
@@ -103,9 +115,9 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
       }
     };
 
-    modal.addEventListener('keydown', handleTabKey);
+    modal.addEventListener("keydown", handleTabKey);
     return () => {
-      modal.removeEventListener('keydown', handleTabKey);
+      modal.removeEventListener("keydown", handleTabKey);
     };
   }, [isOpen]);
 
@@ -116,12 +128,12 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
       onSave(settings);
       setOriginalSettings(settings);
       setSaveMessage("SAVED");
-      logDebug('Settings', '設定を保存しました', {
+      logDebug("Settings", "設定を保存しました", {
         hasApiKey: settings.openaiApiKey.length > 0,
         typewriterSpeed: settings.typewriterSpeed,
         autoScroll: settings.autoScroll,
       });
-      
+
       // 保存完了メッセージを一定時間後に消去してモーダルを閉じる
       setTimeout(() => {
         setSaveMessage("");
@@ -130,13 +142,13 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
       }, SAVE_MESSAGE_TIMEOUT_MS);
     } catch (error) {
       setSaveMessage("ERROR: Failed to save");
-      logDebug('Settings', '設定の保存に失敗しました', { error });
+      logDebug("Settings", "設定の保存に失敗しました", { error });
     } finally {
       setIsSaving(false);
     }
   };
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     if (hasUnsavedChanges() && !showUnsavedWarning) {
       setShowUnsavedWarning(true);
       return;
@@ -144,7 +156,7 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
     setShowApiKey(false);
     setShowUnsavedWarning(false);
     onClose();
-  };
+  }, [hasUnsavedChanges, showUnsavedWarning, onClose]);
 
   const handleOverlayClick = () => {
     if (hasUnsavedChanges() && !showUnsavedWarning) {
@@ -157,32 +169,32 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
   if (!isOpen) return null;
 
   return (
-    <div 
+    <div
       className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden touch-none animate-fadeIn"
       role="dialog"
       aria-modal="true"
       aria-labelledby="settings-modal-title"
     >
       {/* オーバーレイ */}
-      <div 
+      <div
         className="absolute inset-0 bg-black/90 backdrop-blur-sm transition-opacity duration-300"
         onClick={handleOverlayClick}
         onTouchMove={(e) => e.preventDefault()}
         aria-hidden="true"
       />
-      
+
       {/* モーダル本体 */}
-      <div 
+      <div
         ref={modalRef}
-        className="relative z-10 w-full max-w-2xl mx-4 bg-black border border-gray-700 shadow-2xl flex flex-col touch-auto animate-slideUp" 
-        style={{ maxHeight: 'calc(100dvh - 2rem)' }}
+        className="relative z-10 w-full max-w-2xl mx-4 bg-black border border-gray-700 shadow-2xl flex flex-col touch-auto animate-slideUp"
+        style={{ maxHeight: "calc(100dvh - 2rem)" }}
       >
         {/* ヘッダー */}
         <div className="flex-shrink-0 bg-black border-b border-gray-700 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Cog6ToothIcon className="w-7 h-7 text-white" aria-hidden="true" />
-            <h2 
-              id="settings-modal-title" 
+            <h2
+              id="settings-modal-title"
               className="text-xl font-light text-white uppercase tracking-widest"
             >
               Settings
@@ -237,170 +249,201 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
 
           {/* AI Provider選択 */}
           <div className="space-y-3">
-            <label htmlFor="ai-provider-select" className="text-white font-light uppercase tracking-wider text-sm block">
+            <label
+              htmlFor="ai-provider-select"
+              className="text-white font-light uppercase tracking-wider text-sm block"
+            >
               AI Provider
             </label>
             <select
               id="ai-provider-select"
               value={settings.aiProvider}
-              onChange={(e) => setSettings({ ...settings, aiProvider: e.target.value as 'openai' | 'gemini' })}
+              onChange={(e) =>
+                setSettings({ ...settings, aiProvider: e.target.value as "openai" | "gemini" })
+              }
               className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
             >
               <option value="openai">OpenAI</option>
               <option value="gemini">Google Gemini</option>
             </select>
-            <p className="text-xs text-gray-600">
-              Choose your preferred AI provider
-            </p>
+            <p className="text-xs text-gray-600">Choose your preferred AI provider</p>
           </div>
 
           {/* OpenAI API設定 */}
-          {settings.aiProvider === 'openai' && (
+          {settings.aiProvider === "openai" && (
             <>
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <label htmlFor="openai-api-key" className="text-white font-light uppercase tracking-wider text-sm">
-                OpenAI API Key
-              </label>
-              <span className="text-xs text-gray-600 uppercase">
-                (Required)
-              </span>
-            </div>
-            <div className="relative">
-              <input
-                id="openai-api-key"
-                type={showApiKey ? "text" : "password"}
-                value={settings.openaiApiKey}
-                onChange={(e) => setSettings({ ...settings, openaiApiKey: e.target.value })}
-                placeholder="sk-..."
-                className="w-full bg-black border border-gray-700 text-white px-4 py-3 pr-24 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
-                aria-required="true"
-              />
-              <button
-                type="button"
-                onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-600 hover:text-white transition-colors duration-200 px-2 py-1 border border-gray-700 hover:border-gray-500 uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-white"
-                aria-label={showApiKey ? "Hide API key" : "Show API key"}
-              >
-                {showApiKey ? "Hide" : "Show"}
-              </button>
-            </div>
-            <p className="text-xs text-gray-600">
-              Get your key from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors duration-200 underline decoration-gray-700 hover:decoration-white">platform.openai.com</a>
-            </p>
-          </div>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <label
+                    htmlFor="openai-api-key"
+                    className="text-white font-light uppercase tracking-wider text-sm"
+                  >
+                    OpenAI API Key
+                  </label>
+                  <span className="text-xs text-gray-600 uppercase">(Required)</span>
+                </div>
+                <div className="relative">
+                  <input
+                    id="openai-api-key"
+                    type={showApiKey ? "text" : "password"}
+                    value={settings.openaiApiKey}
+                    onChange={(e) => setSettings({ ...settings, openaiApiKey: e.target.value })}
+                    placeholder="sk-..."
+                    className="w-full bg-black border border-gray-700 text-white px-4 py-3 pr-24 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
+                    aria-required="true"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-600 hover:text-white transition-colors duration-200 px-2 py-1 border border-gray-700 hover:border-gray-500 uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-white"
+                    aria-label={showApiKey ? "Hide API key" : "Show API key"}
+                  >
+                    {showApiKey ? "Hide" : "Show"}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-600">
+                  Get your key from{" "}
+                  <a
+                    href="https://platform.openai.com/api-keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gray-400 hover:text-white transition-colors duration-200 underline decoration-gray-700 hover:decoration-white"
+                  >
+                    platform.openai.com
+                  </a>
+                </p>
+              </div>
 
-          {/* OpenAI モデル選択 */}
-          <div className="space-y-3">
-            <label htmlFor="openai-model-select" className="text-white font-light uppercase tracking-wider text-sm block">
-              OpenAI Model Selection
-            </label>
-            <select
-              id="openai-model-select"
-              value={settings.openaiModel}
-              onChange={(e) => setSettings({ ...settings, openaiModel: e.target.value })}
-              className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
-            >
-              <optgroup label="GPT-5シリーズ（最新）">
-                <option value="gpt-5">GPT-5 ⭐ (最新・推奨)</option>
-                <option value="gpt-5-mini">GPT-5-mini (高速・効率的)</option>
-                <option value="gpt-5-nano">GPT-5-nano (超軽量)</option>
-                <option value="gpt-5-pro">GPT-5-pro (最高性能)</option>
-                <option value="gpt-5-thinking">GPT-5-thinking (深い推論)</option>
-              </optgroup>
-              <optgroup label="推論特化（o1シリーズ）">
-                <option value="o1">o1 (高度な推論)</option>
-                <option value="o1-mini">o1-mini (推論・低コスト)</option>
-              </optgroup>
-              <optgroup label="GPT-4シリーズ">
-                <option value="gpt-4o">GPT-4o</option>
-                <option value="gpt-4o-mini">GPT-4o-mini</option>
-                <option value="gpt-4-turbo">GPT-4 Turbo</option>
-              </optgroup>
-              <optgroup label="その他">
-                <option value="gpt-3.5-turbo">GPT-3.5 Turbo (低コスト)</option>
-              </optgroup>
-            </select>
-            <p className="text-xs text-gray-600">
-              GPT-5: Standard / GPT-5-mini: Fast / GPT-5-pro: Maximum Performance
-            </p>
-          </div>
+              {/* OpenAI モデル選択 */}
+              <div className="space-y-3">
+                <label
+                  htmlFor="openai-model-select"
+                  className="text-white font-light uppercase tracking-wider text-sm block"
+                >
+                  OpenAI Model Selection
+                </label>
+                <select
+                  id="openai-model-select"
+                  value={settings.openaiModel}
+                  onChange={(e) => setSettings({ ...settings, openaiModel: e.target.value })}
+                  className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
+                >
+                  <optgroup label="GPT-5シリーズ（最新）">
+                    <option value="gpt-5">GPT-5 ⭐ (最新・推奨)</option>
+                    <option value="gpt-5-mini">GPT-5-mini (高速・効率的)</option>
+                    <option value="gpt-5-nano">GPT-5-nano (超軽量)</option>
+                    <option value="gpt-5-pro">GPT-5-pro (最高性能)</option>
+                    <option value="gpt-5-thinking">GPT-5-thinking (深い推論)</option>
+                  </optgroup>
+                  <optgroup label="推論特化（o1シリーズ）">
+                    <option value="o1">o1 (高度な推論)</option>
+                    <option value="o1-mini">o1-mini (推論・低コスト)</option>
+                  </optgroup>
+                  <optgroup label="GPT-4シリーズ">
+                    <option value="gpt-4o">GPT-4o</option>
+                    <option value="gpt-4o-mini">GPT-4o-mini</option>
+                    <option value="gpt-4-turbo">GPT-4 Turbo</option>
+                  </optgroup>
+                  <optgroup label="その他">
+                    <option value="gpt-3.5-turbo">GPT-3.5 Turbo (低コスト)</option>
+                  </optgroup>
+                </select>
+                <p className="text-xs text-gray-600">
+                  GPT-5: Standard / GPT-5-mini: Fast / GPT-5-pro: Maximum Performance
+                </p>
+              </div>
             </>
           )}
 
           {/* Gemini API設定 */}
-          {settings.aiProvider === 'gemini' && (
+          {settings.aiProvider === "gemini" && (
             <>
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <label htmlFor="gemini-api-key" className="text-white font-light uppercase tracking-wider text-sm">
-                Google Gemini API Key
-              </label>
-              <span className="text-xs text-gray-600 uppercase">
-                (Required)
-              </span>
-            </div>
-            <div className="relative">
-              <input
-                id="gemini-api-key"
-                type={showApiKey ? "text" : "password"}
-                value={settings.geminiApiKey}
-                onChange={(e) => setSettings({ ...settings, geminiApiKey: e.target.value })}
-                placeholder="AIza..."
-                className="w-full bg-black border border-gray-700 text-white px-4 py-3 pr-24 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
-                aria-required="true"
-              />
-              <button
-                type="button"
-                onClick={() => setShowApiKey(!showApiKey)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-600 hover:text-white transition-colors duration-200 px-2 py-1 border border-gray-700 hover:border-gray-500 uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-white"
-                aria-label={showApiKey ? "Hide API key" : "Show API key"}
-              >
-                {showApiKey ? "Hide" : "Show"}
-              </button>
-            </div>
-            <p className="text-xs text-gray-600">
-              Get your key from <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="text-gray-400 hover:text-white transition-colors duration-200 underline decoration-gray-700 hover:decoration-white">aistudio.google.com</a>
-            </p>
-          </div>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <label
+                    htmlFor="gemini-api-key"
+                    className="text-white font-light uppercase tracking-wider text-sm"
+                  >
+                    Google Gemini API Key
+                  </label>
+                  <span className="text-xs text-gray-600 uppercase">(Required)</span>
+                </div>
+                <div className="relative">
+                  <input
+                    id="gemini-api-key"
+                    type={showApiKey ? "text" : "password"}
+                    value={settings.geminiApiKey}
+                    onChange={(e) => setSettings({ ...settings, geminiApiKey: e.target.value })}
+                    placeholder="AIza..."
+                    className="w-full bg-black border border-gray-700 text-white px-4 py-3 pr-24 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
+                    aria-required="true"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-gray-600 hover:text-white transition-colors duration-200 px-2 py-1 border border-gray-700 hover:border-gray-500 uppercase tracking-wider focus:outline-none focus:ring-2 focus:ring-white"
+                    aria-label={showApiKey ? "Hide API key" : "Show API key"}
+                  >
+                    {showApiKey ? "Hide" : "Show"}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-600">
+                  Get your key from{" "}
+                  <a
+                    href="https://aistudio.google.com/apikey"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gray-400 hover:text-white transition-colors duration-200 underline decoration-gray-700 hover:decoration-white"
+                  >
+                    aistudio.google.com
+                  </a>
+                </p>
+              </div>
 
-          {/* Gemini モデル選択 */}
-          <div className="space-y-3">
-            <label htmlFor="gemini-model-select" className="text-white font-light uppercase tracking-wider text-sm block">
-              Gemini Model Selection
-            </label>
-            <select
-              id="gemini-model-select"
-              value={settings.geminiModel}
-              onChange={(e) => setSettings({ ...settings, geminiModel: e.target.value })}
-              className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
-            >
-              <optgroup label="Gemini 2.5 (Latest)">
-                <option value="gemini-2.5-flash">Gemini 2.5 Flash ⭐ (Latest)</option>
-                <option value="gemini-2.5-pro">Gemini 2.5 Pro (Premium)</option>
-              </optgroup>
-              <optgroup label="Gemini 2.0">
-                <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Experimental)</option>
-              </optgroup>
-              <optgroup label="Gemini 1.5">
-                <option value="gemini-1.5-pro-latest">Gemini 1.5 Pro (Latest)</option>
-                <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-                <option value="gemini-1.5-flash-latest">Gemini 1.5 Flash (Latest)</option>
-                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                <option value="gemini-1.5-flash-8b-latest">Gemini 1.5 Flash-8B (Latest)</option>
-                <option value="gemini-1.5-flash-8b">Gemini 1.5 Flash-8B</option>
-              </optgroup>
-            </select>
-            <p className="text-xs text-gray-600">
-              2.5 Flash: Latest & balanced (無料枠: RPM 10) / 2.5 Pro: Premium quality (無料枠: RPM 2) / 1.5 Flash: Fast (無料枠: RPM 15)
-            </p>
-          </div>
+              {/* Gemini モデル選択 */}
+              <div className="space-y-3">
+                <label
+                  htmlFor="gemini-model-select"
+                  className="text-white font-light uppercase tracking-wider text-sm block"
+                >
+                  Gemini Model Selection
+                </label>
+                <select
+                  id="gemini-model-select"
+                  value={settings.geminiModel}
+                  onChange={(e) => setSettings({ ...settings, geminiModel: e.target.value })}
+                  className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
+                >
+                  <optgroup label="Gemini 2.5 (Latest)">
+                    <option value="gemini-2.5-flash">Gemini 2.5 Flash ⭐ (Latest)</option>
+                    <option value="gemini-2.5-pro">Gemini 2.5 Pro (Premium)</option>
+                  </optgroup>
+                  <optgroup label="Gemini 2.0">
+                    <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Experimental)</option>
+                  </optgroup>
+                  <optgroup label="Gemini 1.5">
+                    <option value="gemini-1.5-pro-latest">Gemini 1.5 Pro (Latest)</option>
+                    <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                    <option value="gemini-1.5-flash-latest">Gemini 1.5 Flash (Latest)</option>
+                    <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                    <option value="gemini-1.5-flash-8b-latest">Gemini 1.5 Flash-8B (Latest)</option>
+                    <option value="gemini-1.5-flash-8b">Gemini 1.5 Flash-8B</option>
+                  </optgroup>
+                </select>
+                <p className="text-xs text-gray-600">
+                  2.5 Flash: Latest & balanced (無料枠: RPM 10) / 2.5 Pro: Premium quality (無料枠:
+                  RPM 2) / 1.5 Flash: Fast (無料枠: RPM 15)
+                </p>
+              </div>
             </>
           )}
 
           {/* タイプライター速度 */}
           <div className="space-y-3">
-            <label htmlFor="typewriter-speed" className="text-white font-light uppercase tracking-wider text-sm block">
+            <label
+              htmlFor="typewriter-speed"
+              className="text-white font-light uppercase tracking-wider text-sm block"
+            >
               Typewriter Speed
             </label>
             <div className="space-y-2">
@@ -411,7 +454,9 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                 max="100"
                 step="5"
                 value={settings.typewriterSpeed}
-                onChange={(e) => setSettings({ ...settings, typewriterSpeed: Number(e.target.value) })}
+                onChange={(e) =>
+                  setSettings({ ...settings, typewriterSpeed: Number(e.target.value) })
+                }
                 className="w-full accent-gray-400 focus:outline-none focus:ring-2 focus:ring-white"
                 aria-valuemin={10}
                 aria-valuemax={100}
@@ -420,20 +465,19 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
               />
               <div className="flex items-center justify-between text-xs text-gray-600 uppercase tracking-wider">
                 <span>Fast (10ms)</span>
-                <span className="text-white font-medium">
-                  {settings.typewriterSpeed}ms
-                </span>
+                <span className="text-white font-medium">{settings.typewriterSpeed}ms</span>
                 <span>Slow (100ms)</span>
               </div>
             </div>
-            <p className="text-xs text-gray-600">
-              Lower values = faster display
-            </p>
+            <p className="text-xs text-gray-600">Lower values = faster display</p>
           </div>
 
           {/* MCP Endpoint */}
           <div className="space-y-3">
-            <label htmlFor="mcp-endpoint" className="text-white font-light uppercase tracking-wider text-sm block">
+            <label
+              htmlFor="mcp-endpoint"
+              className="text-white font-light uppercase tracking-wider text-sm block"
+            >
               MCP Endpoint
               <span className="text-xs text-gray-600 normal-case ml-2">(Optional)</span>
             </label>
@@ -452,7 +496,10 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
 
           {/* 自動スクロール */}
           <div className="space-y-3">
-            <label htmlFor="auto-scroll-checkbox" className="flex items-center gap-3 cursor-pointer group">
+            <label
+              htmlFor="auto-scroll-checkbox"
+              className="flex items-center gap-3 cursor-pointer group"
+            >
               <input
                 id="auto-scroll-checkbox"
                 type="checkbox"
@@ -477,7 +524,10 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
             <div className="mt-4 space-y-4">
               {/* Temperature */}
               <div className="space-y-2">
-                <label htmlFor="temperature-slider" className="text-white font-light uppercase tracking-wider text-sm block">
+                <label
+                  htmlFor="temperature-slider"
+                  className="text-white font-light uppercase tracking-wider text-sm block"
+                >
                   Temperature (Creativity)
                 </label>
                 <input
@@ -487,7 +537,9 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                   max="2"
                   step="0.1"
                   value={settings.temperature || 0.7}
-                  onChange={(e) => setSettings({ ...settings, temperature: Number(e.target.value) })}
+                  onChange={(e) =>
+                    setSettings({ ...settings, temperature: Number(e.target.value) })
+                  }
                   className="w-full accent-gray-400 focus:outline-none focus:ring-2 focus:ring-white"
                   aria-valuemin={0}
                   aria-valuemax={2}
@@ -506,7 +558,10 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
 
               {/* Max Tokens */}
               <div className="space-y-2">
-                <label htmlFor="max-tokens-input" className="text-white font-light uppercase tracking-wider text-sm block">
+                <label
+                  htmlFor="max-tokens-input"
+                  className="text-white font-light uppercase tracking-wider text-sm block"
+                >
                   Max Tokens (max_completion_tokens)
                 </label>
                 <input
@@ -528,19 +583,19 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
 
           {/* 保存メッセージ */}
           {saveMessage && (
-            <div className={`flex items-center justify-center gap-2 py-3 px-4 border animate-fadeIn ${
-              saveMessage.startsWith("SAVED") 
-                ? "bg-green-900/20 border-green-600/50 text-green-200" 
-                : "bg-red-900/20 border-red-600/50 text-red-200"
-            }`}>
+            <div
+              className={`flex items-center justify-center gap-2 py-3 px-4 border animate-fadeIn ${
+                saveMessage.startsWith("SAVED")
+                  ? "bg-green-900/20 border-green-600/50 text-green-200"
+                  : "bg-red-900/20 border-red-600/50 text-red-200"
+              }`}
+            >
               {saveMessage.startsWith("SAVED") ? (
                 <CheckCircleIcon className="w-5 h-5" />
               ) : (
                 <XCircleIcon className="w-5 h-5" />
               )}
-              <span className="uppercase tracking-wider text-sm font-light">
-                {saveMessage}
-              </span>
+              <span className="uppercase tracking-wider text-sm font-light">{saveMessage}</span>
             </div>
           )}
         </div>
@@ -555,7 +610,12 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
           </button>
           <button
             onClick={handleSave}
-            disabled={isSaving || (settings.aiProvider === 'openai' ? !settings.openaiApiKey.trim() : !settings.geminiApiKey.trim())}
+            disabled={
+              isSaving ||
+              (settings.aiProvider === "openai"
+                ? !settings.openaiApiKey.trim()
+                : !settings.geminiApiKey.trim())
+            }
             className="px-8 py-2.5 bg-white text-black hover:bg-gray-200 border border-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white uppercase tracking-wider text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-black"
           >
             {isSaving ? "Saving..." : "Save"}
@@ -567,4 +627,3 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
 }
 
 export default SettingsModal;
-

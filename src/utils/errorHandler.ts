@@ -3,6 +3,7 @@
  * すべてのエラーはこのユーティリティを通じてログ出力することで、
  * コンソールでの追跡が容易になる
  */
+/* eslint-disable no-console */
 
 /**
  * エラー情報をコンソールに出力する
@@ -27,15 +28,15 @@ export function logError(
   // 開発環境では詳細情報を見やすく表示
   if (import.meta.env.DEV) {
     console.group(`🔴 [${context} Error]`);
-    console.error('Message:', errorMessage);
+    console.error("Message:", errorMessage);
     if (errorStack) {
-      console.error('Stack:', errorStack);
+      console.error("Stack:", errorStack);
     }
     if (additionalData && Object.keys(additionalData).length > 0) {
-      console.error('Additional Data:', additionalData);
+      console.error("Additional Data:", additionalData);
     }
-    console.error('Timestamp:', new Date().toISOString());
-    console.error('Full Error Object:', error);
+    console.error("Timestamp:", new Date().toISOString());
+    console.error("Full Error Object:", error);
     console.groupEnd();
   } else {
     // 本番環境ではシンプルに
@@ -59,18 +60,14 @@ export function logError(
  * @param message - 警告メッセージ
  * @param data - 警告に関連するデータ（オプション）
  */
-export function logWarning(
-  context: string,
-  message: string,
-  data?: Record<string, unknown>
-): void {
+export function logWarning(context: string, message: string, data?: Record<string, unknown>): void {
   if (import.meta.env.DEV) {
     console.group(`⚠️ [${context} Warning]`);
-    console.warn('Message:', message);
+    console.warn("Message:", message);
     if (data && Object.keys(data).length > 0) {
-      console.warn('Data:', data);
+      console.warn("Data:", data);
     }
-    console.warn('Timestamp:', new Date().toISOString());
+    console.warn("Timestamp:", new Date().toISOString());
     console.groupEnd();
   } else {
     console.warn(`[${context} Warning]`, {
@@ -92,19 +89,15 @@ export function logWarning(
  * @param message - デバッグメッセージ
  * @param data - デバッグデータ（オプション）
  */
-export function logDebug(
-  context: string,
-  message: string,
-  data?: Record<string, unknown>
-): void {
+export function logDebug(context: string, message: string, data?: Record<string, unknown>): void {
   // 開発環境でのみ出力（本番では無効化）
   if (import.meta.env.DEV) {
     console.group(`🔵 [${context} Debug]`);
-    console.log('Message:', message);
+    console.log("Message:", message);
     if (data && Object.keys(data).length > 0) {
-      console.log('Data:', data);
+      console.log("Data:", data);
     }
-    console.log('Timestamp:', new Date().toISOString());
+    console.log("Timestamp:", new Date().toISOString());
     console.groupEnd();
   }
 }
@@ -123,10 +116,10 @@ export function getErrorMessage(error: unknown): string {
   if (error instanceof Error) {
     return error.message;
   }
-  if (typeof error === 'string') {
+  if (typeof error === "string") {
     return error;
   }
-  return 'Unknown error occurred';
+  return "Unknown error occurred";
 }
 
 /**
@@ -144,12 +137,12 @@ export function handleTauriError(error: unknown, fallbackMessage: string): strin
   const errorMessage = getErrorMessage(error);
 
   // Tauri APIが利用できない場合（開発サーバーで直接ブラウザアクセスした場合）
-  if (errorMessage.includes('__TAURI_INTERNALS__')) {
-    logWarning('Tauri API', 'Running without Tauri backend', { fallbackMessage });
+  if (errorMessage.includes("__TAURI_INTERNALS__")) {
+    logWarning("Tauri API", "Running without Tauri backend", { fallbackMessage });
     return fallbackMessage;
   }
 
   // その他のTauri APIエラー
-  logError('Tauri API', error);
+  logError("Tauri API", error);
   return `処理に失敗しました: ${errorMessage}`;
 }

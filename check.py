@@ -49,11 +49,66 @@ def run_type_check():
         return False
 
 
+def run_eslint_check():
+    """ESLintチェック"""
+    print_section("ESLintチェック")
+    
+    npm_cmd = get_npm_command()
+    
+    try:
+        result = subprocess.run(
+            [npm_cmd, "run", "lint"], 
+            check=False, 
+            shell=True,
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode == 0:
+            print("✅ ESLintエラーなし")
+            return True
+        else:
+            print("❌ ESLintエラーがあります")
+            print(result.stdout)
+            return False
+    except Exception as error:
+        print(f"⚠️  ESLint実行エラー: {error}")
+        return True  # エラーでも継続
+
+
+def run_prettier_check():
+    """Prettierフォーマットチェック"""
+    print_section("Prettierフォーマットチェック")
+    
+    npm_cmd = get_npm_command()
+    
+    try:
+        result = subprocess.run(
+            [npm_cmd, "run", "format:check"], 
+            check=False, 
+            shell=True,
+            capture_output=True,
+            text=True
+        )
+        
+        if result.returncode == 0:
+            print("✅ フォーマットOK")
+            return True
+        else:
+            print("⚠️  フォーマットが必要なファイルがあります")
+            print(result.stdout)
+            print("\n💡 自動修正: npm run format")
+            return False
+    except Exception as error:
+        print(f"⚠️  Prettier実行エラー: {error}")
+        return True  # エラーでも継続
+
+
 def run_code_quality_check():
     """コード品質チェック（scripts/check-code-quality.sh）"""
     print_section("コード品質チェック")
 
-    script_path = Path("scripts/check-code-quality.sh")
+    script_path = Path("scripts") / "check-code-quality.sh"
 
     if not script_path.exists():
         print("⚠️  check-code-quality.sh が見つかりません（スキップ）")
@@ -62,9 +117,9 @@ def run_code_quality_check():
     try:
         # Windows環境の場合はbashで実行
         if sys.platform == "win32":
-            subprocess.run(["bash", str(script_path)], check=False)
+            subprocess.run(["bash", str(script_path)], check=False, shell=False)
         else:
-            subprocess.run([str(script_path)], check=False)
+            subprocess.run([str(script_path)], check=False, shell=False)
 
         print("✅ コード品質チェック完了")
         return True
@@ -164,6 +219,8 @@ def main():
 
     # クイックモードでない場合は追加チェック
     if not args.quick:
+        results.append(("ESLint", run_eslint_check()))
+        results.append(("Prettier", run_prettier_check()))
         results.append(("コード品質", run_code_quality_check()))
         results.append(("マジックナンバー", search_magic_numbers()))
         results.append(("console.log", search_console_log()))

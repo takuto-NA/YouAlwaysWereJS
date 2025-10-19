@@ -26,47 +26,71 @@ export class MCPClient {
   }
 
   async connect(): Promise<void> {
-    // 将来: WebSocketでMCPサーバーに接続
-    logDebug('MCP Client', 'Connecting to server', {
-      endpoint: this.endpoint,
-    });
-    this.connected = true;
+    try {
+      // 将来: WebSocketでMCPサーバーに接続
+      logDebug("MCP Client", "Connecting to server", {
+        endpoint: this.endpoint,
+      });
+      this.connected = true;
+    } catch (error) {
+      logError("MCP Client", error, {
+        attemptedAction: "connect",
+        endpoint: this.endpoint,
+      });
+      throw error;
+    }
   }
 
   async send(message: MCPMessage): Promise<void> {
-    if (!this.connected) {
-      const error = new Error("MCP Client not connected");
-      logError('MCP Client', error, {
-        attemptedAction: 'send',
+    try {
+      if (!this.connected) {
+        const error = new Error("MCP Client not connected");
+        logError("MCP Client", error, {
+          attemptedAction: "send",
+          messageType: message.type,
+        });
+        throw error;
+      }
+
+      // 将来: MCPサーバーにメッセージを送信
+      logDebug("MCP Client", "Sending message", {
+        type: message.type,
+        timestamp: message.timestamp,
+      });
+    } catch (error) {
+      logError("MCP Client", error, {
+        attemptedAction: "send",
         messageType: message.type,
       });
       throw error;
     }
-
-    // 将来: MCPサーバーにメッセージを送信
-    logDebug('MCP Client', 'Sending message', {
-      type: message.type,
-      timestamp: message.timestamp,
-    });
   }
 
   async request<T>(type: string, payload: unknown): Promise<T> {
-    // 将来: MCPサーバーとのリクエスト・レスポンスパターン
-    const message: MCPMessage = {
-      type,
-      payload,
-      timestamp: Date.now(),
-    };
+    try {
+      // 将来: MCPサーバーとのリクエスト・レスポンスパターン
+      const message: MCPMessage = {
+        type,
+        payload,
+        timestamp: Date.now(),
+      };
 
-    await this.send(message);
+      await this.send(message);
 
-    // プレースホルダーレスポンス
-    return {} as T;
+      // プレースホルダーレスポンス
+      return {} as T;
+    } catch (error) {
+      logError("MCP Client", error, {
+        attemptedAction: "request",
+        requestType: type,
+      });
+      throw error;
+    }
   }
 
   disconnect(): void {
     this.connected = false;
-    logDebug('MCP Client', 'Disconnected from server');
+    logDebug("MCP Client", "Disconnected from server");
   }
 }
 
