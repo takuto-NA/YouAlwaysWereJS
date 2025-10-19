@@ -1,26 +1,52 @@
-# You Always Were JS
+# LangGraph + OpenAI Chat Interface
 
-グリッドベースのゲームプロトタイプ（React + TypeScript + Tauri + TailwindCSS）
+LangGraphとOpenAI APIを使用したMCP対話型チャットアプリケーション（React + TypeScript + Tauri + TailwindCSS）
+
+## 概要
+
+このアプリケーションは、以下の技術を統合した対話型チャットインターフェースです：
+- **OpenAI API**: GPT-5など最新モデルを使用した自然言語処理
+- **LangGraph**: 意思決定フローの管理（将来実装予定）
+- **MCP (Model Context Protocol)**: AIモデル間の通信プロトコル（将来実装予定）
+- **Tauri**: クロスプラットフォームデスクトップアプリ
 
 ## クイックスタート
 
-### 方法1: Pythonスクリプト（推奨）
+### 1. 環境設定（オプション）
+
+**推奨**: アプリ内の設定画面から設定できるため、`.env`ファイルは不要です。
+
+もし環境変数で設定したい場合は、`.env`ファイルを作成：
 
 ```bash
-# 初回のみ
-npm install
+VITE_OPENAI_API_KEY=your_openai_api_key_here
+```
 
-# 開発サーバー起動（ブラウザ自動起動）
+> **注意**: OpenAI APIキーは[OpenAI Platform](https://platform.openai.com/api-keys)から取得できます。
+> 
+> **推奨方法**: アプリ起動後、右上の **≡** ボタンから設定画面を開いて入力
+
+### 2. 依存関係のインストール
+
+```bash
+npm install
+```
+
+### 3. アプリケーション起動
+
+#### 方法1: Pythonスクリプト（推奨）
+
+```bash
+# Web版（ブラウザ自動起動）
 python dev.py
 
 # Tauri版（デスクトップアプリ）
 python dev.py --tauri
 ```
 
-### 方法2: npm コマンド
+#### 方法2: npm コマンド
 
 ```bash
-npm install
 npm run dev          # Web版（http://localhost:1420）
 npm run tauri:dev    # デスクトップ版
 ```
@@ -66,21 +92,51 @@ python check.py --quick
 ```
 YouAlwaysWereJS/
 ├── src/
-│   ├── App.tsx              # メインゲームロジック
+│   ├── App.tsx              # メインチャットアプリケーション
 │   ├── components/          # UI コンポーネント
-│   ├── config/              # ゲーム設定
+│   │   ├── ChatMessage.tsx  # メッセージ表示
+│   │   └── ChatInput.tsx    # メッセージ入力
+│   ├── services/            # サービス層
+│   │   ├── ai/              # AI統合
+│   │   │   ├── index.ts     # AIサービスエントリーポイント
+│   │   │   └── openai.ts    # OpenAI API統合
+│   │   ├── langgraph/       # LangGraphワークフロー
+│   │   └── mcp/             # MCPクライアント
 │   ├── types/               # TypeScript 型定義
+│   │   ├── chat.ts          # チャット関連の型
+│   │   └── game.ts          # ゲーム関連の型（レガシー）
 │   └── utils/               # ユーティリティ関数
 ├── index.html               # エントリーポイント
 └── [設定ファイル群]         # 詳細は CONFIG_GUIDE.md 参照
 ```
+
+## 機能
+
+### 実装済み
+- ✅ ターミナル風UIデザイン
+- ✅ リアルタイムチャット機能
+- ✅ OpenAI API統合
+- ✅ メッセージ履歴管理
+- ✅ エラーハンドリング
+- ✅ タイムスタンプ表示
+- ✅ 処理中インジケーター
+- ✅ **タイプライター効果（一文字ずつ表示）**
+- ✅ **設定画面（ハンバーガーメニュー）**
+- ✅ **ローカルストレージで設定を永続化**
+
+### 将来実装予定
+- ⏳ LangGraphによる複雑なワークフロー
+- ⏳ MCP経由のモデル間通信
+- ⏳ チャット履歴の永続化
+- ⏳ マルチモーダル対応（画像、音声）
+- ⏳ カスタムプロンプト設定
 
 ## コーディングルール
 
 ### ✅ チェックリスト
 
 - [ ] エラーは `logError()` でコンソール出力（コンテキスト含む）
-- [ ] マジックナンバー禁止 → `GAME_CONFIG` で定数化
+- [ ] マジックナンバー禁止 → 定数化
 - [ ] DRY原則遵守（重複コード禁止）
 - [ ] 変数名・関数名は省略せず完全な単語を使用
 - [ ] 早期リターンでネスト削減
@@ -89,24 +145,29 @@ YouAlwaysWereJS/
 ### ❌ Bad / ✅ Good
 
 ```typescript
-// ❌ Bad - マジックナンバー・省略・ネスト
-function move(pos: {x: number, y: number}) {
-  if (pos.x < 9) {
-    if (pos.y > 0) {
-      // 処理...
-    }
-  }
+// ❌ Bad - 省略・エラー処理なし
+async function send(msg: string) {
+  const res = await fetch(url, { body: msg });
+  return res.json();
 }
 
-// ✅ Good - 定数・完全な名前・早期リターン
-function movePlayer(position: Position) {
-  if (position.x >= GAME_CONFIG.MAX_GRID_INDEX) {
-    return position;
+// ✅ Good - 完全な名前・エラー処理
+async function sendMessage(message: string): Promise<Response> {
+  try {
+    const response = await fetch(API_ENDPOINT, {
+      method: "POST",
+      body: JSON.stringify({ message }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.statusText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    logError('Message Send', error, { messageLength: message.length });
+    throw error;
   }
-  if (position.y <= DERIVED_CONSTANTS.MIN_GRID_INDEX) {
-    return position;
-  }
-  // 正常系の処理...
 }
 ```
 
@@ -115,34 +176,107 @@ function movePlayer(position: Position) {
 ```typescript
 // ✅ Good - コンテキスト付きエラーログ
 try {
-  await initializeGame();
+  await openAIService.chat(messages);
 } catch (error) {
-  logError('Game Initialization', error, {
-    playerId: player.id,
-    attemptCount: retryCount
+  logError('Chat', error, {
+    attemptedAction: 'chat',
+    messageCount: messages.length,
   });
 }
 ```
 
-### 早期リターン
+## 環境変数（オプション）
 
-```typescript
-// ✅ Good - 異常系を先に処理
-function handleItemCollection(position: Position, items: Item[]) {
-  const itemIndex = items.findIndex(i => isSamePosition(i, position));
+アプリ内の設定画面（≡ボタン）から設定することを推奨します。
 
-  // 早期リターン: アイテムがない
-  if (itemIndex === -1) {
-    return { items, scoreChange: 0 };
-  }
+環境変数で設定する場合:
 
-  // 正常系: アイテムがある場合の処理
-  const collectedItem = items[itemIndex];
-  const newItems = [...items];
-  newItems.splice(itemIndex, 1);
-  return { items: newItems, scoreChange: collectedItem.value };
-}
+| 変数名 | 説明 | 必須 | デフォルト値 |
+|--------|------|------|-------------|
+| `VITE_OPENAI_API_KEY` | OpenAI APIキー | ❌ 設定画面で入力可 | なし |
+| `VITE_MCP_ENDPOINT` | MCPサーバーエンドポイント | ❌ いいえ | `ws://localhost:8080` |
+
+> 💡 **推奨**: 環境変数より設定画面を使用してください（より安全で使いやすい）
+
+## デバッグ方法
+
+### ブラウザコンソールでのデバッグ（F12）
+
+開発中のエラーやログは、ブラウザの開発者コンソール（F12）で確認できます。
+
+**コンソールの開き方:**
+- **Windows/Linux**: F12 または Ctrl + Shift + I
+- **Mac**: Cmd + Option + I
+
+**ログの種類:**
+- 🔴 **エラーログ**: 重大なエラー（詳細情報付き）
+- ⚠️ **警告ログ**: 注意が必要な状況
+- 🔵 **デバッグログ**: 開発中の動作確認（開発環境のみ）
+
+詳細は [DEV_CONSOLE_GUIDE.md](DEV_CONSOLE_GUIDE.md) を参照してください。
+
+### タイプライター効果
+
+AIの応答メッセージは一文字ずつ表示されます。
+
+**特徴:**
+- AIメッセージのみ適用（ユーザー・システムメッセージは即座に表示）
+- タイプ中は`[入力中...]`と点滅カーソル（▋）を表示
+- カスタマイズ可能な表示速度
+
+詳細は [TYPEWRITER_EFFECT.md](TYPEWRITER_EFFECT.md) を参照してください。
+
+### 設定画面
+
+画面右上の **≡**（ハンバーガーメニュー）ボタンから設定画面を開けます。
+
+**設定可能な項目:**
+- 🤖 **OpenAI API キー**: 必須。OpenAI APIにアクセスするためのキー
+- 🤖 **モデル選択**: 
+  - **GPT-5シリーズ**: GPT-5（推奨）、GPT-5-mini、GPT-5-nano、GPT-5-pro、GPT-5-thinking
+  - **o1シリーズ**: o1、o1-mini
+  - **GPT-4シリーズ**: GPT-4o、GPT-4o-mini、GPT-4 Turbo
+  - **その他**: GPT-3.5 Turbo
+- ⚡ **タイプライター速度**: 文字表示速度（10-100ms）
+- 🔌 **MCP エンドポイント**: オプション。将来実装予定
+- 📜 **自動スクロール**: 新しいメッセージで自動スクロール
+- 🔧 **詳細設定**: Temperature（創造性）、最大トークン数
+
+**特徴:**
+- ローカルストレージに保存（再入力不要）
+- APIキーは表示/非表示を切り替え可能
+- 最新のGPT-5をデフォルトで使用
+- 用途に応じて最適なモデルを選択可能（標準、mini、nano、pro、thinking）
+
+詳細は [SETTINGS_GUIDE.md](SETTINGS_GUIDE.md) を参照してください。
+
+### ログの例
+
 ```
+🔵 [App Debug]
+  Message: チャットアプリケーション初期化完了
+  Data: { environment: "development", hasApiKey: true }
+  Timestamp: 2024-01-01T12:00:00.000Z
+
+🔴 [OpenAI Service Error]
+  Message: OpenAI APIキーが設定されていません
+  Stack: Error: OpenAI APIキーが設定されていません...
+  Full Error Object: Error { ... }
+```
+
+## トラブルシューティング
+
+### OpenAI APIエラー
+
+```
+エラー: OpenAI APIキーが設定されていません
+```
+
+**解決方法**: `.env`ファイルに`VITE_OPENAI_API_KEY`を設定してください。
+
+### MCPクライアント接続エラー
+
+MCPクライアントは現在プレースホルダー実装です。将来のバージョンで実装予定です。
 
 ## 便利コマンド
 
@@ -153,28 +287,11 @@ npm run type-check
 # コード品質チェック
 bash scripts/check-code-quality.sh
 
-# マジックナンバー検索
-grep -rn --include="*.ts" --include="*.tsx" -E "[^a-zA-Z_][0-9]{2,}" src/
-
 # console.log検索（本番前削除）
 grep -rn "console\.log" src/
 
 # 省略変数名検索（3文字以下）
 grep -rn -E "(const|let|var)\s+[a-z]{1,3}\s*=" src/
-```
-
-## ゲーム設定
-
-全てのゲームパラメータは `src/config/gameConfig.ts` で一元管理。
-
-```typescript
-export const GAME_CONFIG = {
-  GRID_SIZE: 10,
-  PLAYER_INITIAL_HEALTH: 100,
-  PLAYER_ATTACK_POWER: 20,
-  ENEMY_DAMAGE: 10,
-  COIN_VALUE: 10,
-} as const;
 ```
 
 ## エラーハンドラー
@@ -187,26 +304,16 @@ logDebug(context, message, data);          // デバッグ
 logWarning(context, message, data);        // 警告
 ```
 
-## 設定ファイル説明
-
-各設定ファイルの詳細は [CONFIG_GUIDE.md](CONFIG_GUIDE.md) を参照。
-
-| ファイル | 役割 | 削除可否 |
-|---------|------|---------|
-| package.json | npm設定 | ❌ ルート必須 |
-| tsconfig.json | TypeScript設定 | ❌ ルート必須 |
-| vite.config.ts | Vite設定 | ❌ ルート必須 |
-| tailwind.config.js | TailwindCSS設定 | ❌ ルート必須 |
-| postcss.config.js | PostCSS設定 | ❌ ルート必須 |
-
-**設定ファイルの数は、モダンWeb開発の標準構成です。これ以上減らせません。**
-
 ## 開発フロー
 
 1. `npm run dev` で開発サーバー起動
-2. コード変更（HMRで自動リロード）
-3. `npm run type-check` で型チェック
-4. Git コミット前に品質チェック実行
+2. ブラウザで開く
+3. 右上の **≡** ボタンから設定画面を開く
+4. OpenAI APIキーを入力して保存
+5. チャットを開始
+6. コード変更時はHMRで自動リロード
+7. `npm run type-check` で型チェック
+8. Git コミット前に品質チェック実行
 
 ## ライセンス
 

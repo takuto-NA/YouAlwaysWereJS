@@ -1,362 +1,266 @@
 /**
- * このファイルの役割: ゲーム全体のメインコンポーネント
- * プレイヤーのアクションを処理し、ゲーム状態を管理する
+ * チャットアプリケーションのメインコンポーネント
+ * LangGraphとOpenAI APIを使用してMCP経由で対話
  */
-import { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import GameBoard from "./components/GameBoard";
-import StatusBar from "./components/StatusBar";
-import ActionPanel from "./components/ActionPanel";
-import { GameState, GameAction, Position, Enemy, Item } from "./types/game";
-import { GAME_CONFIG, DERIVED_CONSTANTS } from "./config/gameConfig";
+import { useState, useRef, useEffect } from "react";
+import ChatMessage from "./components/ChatMessage";
+import ChatInput from "./components/ChatInput";
+import SettingsModal from "./components/SettingsModal";
+import { Message, ChatState } from "./types/chat";
+import { openAIService } from "./services/ai";
 import { logError, logDebug } from "./utils/errorHandler";
-
-/**
- * プレイヤーの新しい位置を計算
- * なぜ関数化: 単一責任の原則、移動ロジックを分離してテスト可能に
- */
-function calculateNewPosition(
-  currentPosition: Position,
-  direction: "up" | "down" | "left" | "right"
-): Position {
-  const { x, y } = currentPosition;
-
-  switch (direction) {
-    case "up":
-      return { x, y: Math.max(DERIVED_CONSTANTS.MIN_GRID_INDEX, y - 1) };
-    case "down":
-      return { x, y: Math.min(DERIVED_CONSTANTS.MAX_GRID_INDEX, y + 1) };
-    case "left":
-      return { x: Math.max(DERIVED_CONSTANTS.MIN_GRID_INDEX, x - 1), y };
-    case "right":
-      return { x: Math.min(DERIVED_CONSTANTS.MAX_GRID_INDEX, x + 1), y };
-  }
-}
-
-/**
- * アイテム収集を処理
- * なぜ関数化: アイテム収集ロジックを分離、早期リターンで可読性向上
- */
-function handleItemCollection(
-  position: Position,
-  items: Item[],
-  currentScore: number,
-  setMessage: (msg: string) => void
-): { newItems: Item[]; newScore: number } {
-  const itemIndex = items.findIndex(
-    (item) => item.x === position.x && item.y === position.y
-  );
-
-  // 早期リターン: アイテムがない場合は何もしない
-  if (itemIndex === -1) {
-    return { newItems: items, newScore: currentScore };
-  }
-
-  const collectedItem = items[itemIndex];
-  const newScore = currentScore + collectedItem.value;
-  const newItems = [...items];
-  newItems.splice(itemIndex, 1);
-
-  setMessage(`コインを獲得！スコア: ${newScore}`);
-
-  return { newItems, newScore };
-}
-
-/**
- * 敵との衝突を処理
- * なぜ関数化: 衝突ロジックを分離、早期リターンで可読性向上
- */
-function handleEnemyCollision(
-  position: Position,
-  enemies: Enemy[],
-  currentHealth: number,
-  setMessage: (msg: string) => void
-): { newHealth: number; isGameOver: boolean } {
-  const enemy = enemies.find((e) => e.x === position.x && e.y === position.y);
-
-  // 早期リターン: 敵がいない場合は何もしない
-  if (!enemy) {
-    return { newHealth: currentHealth, isGameOver: false };
-  }
-
-  const newHealth = Math.max(0, currentHealth - enemy.damage);
-  const isGameOver = newHealth <= 0;
-
-  if (isGameOver) {
-    setMessage("ゲームオーバー！");
-  } else {
-    setMessage(`敵に遭遇！ダメージ: ${enemy.damage}`);
-  }
-
-  return { newHealth, isGameOver };
-}
-
-/**
- * 攻撃処理
- * なぜ関数化: 攻撃ロジックを分離、早期リターンで可読性向上
- */
-function handleAttack(
-  playerPosition: Position,
-  enemies: Enemy[],
-  currentScore: number,
-  setMessage: (msg: string) => void
-): { newEnemies: Enemy[]; newScore: number } {
-  const { x, y } = playerPosition;
-  const enemyIndex = enemies.findIndex(
-    (e) => Math.abs(e.x - x) <= 1 && Math.abs(e.y - y) <= 1
-  );
-
-  // 早期リターン: 攻撃範囲に敵がいない場合
-  if (enemyIndex === -1) {
-    setMessage("攻撃範囲に敵がいません。");
-    return { newEnemies: enemies, newScore: currentScore };
-  }
-
-  const newEnemies = [...enemies];
-  newEnemies[enemyIndex].health -= GAME_CONFIG.PLAYER_ATTACK_POWER;
-
-  // 敵を倒した場合
-  if (newEnemies[enemyIndex].health <= 0) {
-    newEnemies.splice(enemyIndex, 1);
-    const newScore = currentScore + GAME_CONFIG.ENEMY_DEFEAT_SCORE;
-    setMessage(`敵を倒した！+${GAME_CONFIG.ENEMY_DEFEAT_SCORE}ポイント`);
-    return { newEnemies, newScore };
-  }
-
-  // 敵を倒せなかった場合
-  setMessage("敵を攻撃！");
-  return { newEnemies, newScore: currentScore };
-}
+import { loadSettings, hasApiKey, AppSettings } from "./utils/storage";
 
 function App() {
-  const [gameState, setGameState] = useState<GameState>({
-    status: "loading",
-    player: {
-      name: "Player",
-      health: GAME_CONFIG.PLAYER_INITIAL_HEALTH,
-      score: GAME_CONFIG.PLAYER_INITIAL_SCORE,
-      position: GAME_CONFIG.PLAYER_INITIAL_POSITION,
-    },
-    grid: [],
-    enemies: [],
-    items: [],
+  const [chatState, setChatState] = useState<ChatState>({
+    messages: [],
+    isProcessing: false,
   });
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState<AppSettings>(loadSettings());
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const [message, setMessage] = useState<string>("");
-
+  // 初期化と設定チェック
   useEffect(() => {
-    initializeGame();
+    const savedSettings = loadSettings();
+    setSettings(savedSettings);
+
+    // APIキーが設定されているかチェック
+    const hasKey = hasApiKey();
+    
+    const initialMessage: Message = {
+      id: "system-1",
+      role: "system",
+      content: hasKey 
+        ? "システム起動完了。OpenAI API経由でMCPを使用した対話が可能です。"
+        : "⚠️ OpenAI APIキーが設定されていません。右上の ≡ ボタンから設定してください。",
+      timestamp: Date.now(),
+      isTyping: false,
+    };
+
+    setChatState({
+      messages: [initialMessage],
+      isProcessing: false,
+    });
+
+    logDebug('App', 'チャットアプリケーション初期化完了', {
+      environment: import.meta.env.MODE,
+      hasApiKey: hasKey,
+      settings: savedSettings,
+    });
   }, []);
 
-  const initializeGame = async () => {
-    try {
-      const response = await invoke<string>("get_game_state");
-      const state = JSON.parse(response);
+  const handleSettingsSave = (newSettings: AppSettings) => {
+    setSettings(newSettings);
+    
+    // APIキーが新たに設定された場合、メッセージを追加
+    const successMessage: Message = {
+      id: `system-${Date.now()}`,
+      role: "system",
+      content: "✓ 設定を保存しました。チャットを開始できます。",
+      timestamp: Date.now(),
+      isTyping: false,
+    };
 
-      // Initialize game grid
-      const grid = Array(GAME_CONFIG.GRID_SIZE).fill(null).map((_, rowIndex) =>
-        Array(GAME_CONFIG.GRID_SIZE).fill(null).map((_, columnIndex) => ({
-          x: columnIndex,
-          y: rowIndex,
-          type: "empty" as const,
-          occupied: columnIndex === GAME_CONFIG.PLAYER_INITIAL_POSITION.x &&
-                    rowIndex === GAME_CONFIG.PLAYER_INITIAL_POSITION.y,
-        }))
-      );
+    setChatState(prev => ({
+      ...prev,
+      messages: [...prev.messages, successMessage],
+    }));
+  };
 
-      // Add random items (coins)
-      const items = [];
-      for (let itemIndex = 0; itemIndex < GAME_CONFIG.COIN_SPAWN_COUNT; itemIndex++) {
-        const randomXPosition = Math.floor(Math.random() * GAME_CONFIG.GRID_SIZE);
-        const randomYPosition = Math.floor(Math.random() * GAME_CONFIG.GRID_SIZE);
-
-        // プレイヤーの初期位置と重ならないようにする
-        const isPlayerPosition = randomXPosition === GAME_CONFIG.PLAYER_INITIAL_POSITION.x &&
-                                 randomYPosition === GAME_CONFIG.PLAYER_INITIAL_POSITION.y;
-
-        if (!isPlayerPosition) {
-          items.push({
-            x: randomXPosition,
-            y: randomYPosition,
-            type: "coin",
-            value: GAME_CONFIG.COIN_VALUE
-          });
-        }
-      }
-
-      // Add random enemies
-      const enemies = [];
-      for (let enemyIndex = 0; enemyIndex < GAME_CONFIG.ENEMY_SPAWN_COUNT; enemyIndex++) {
-        const randomXPosition = Math.floor(Math.random() * GAME_CONFIG.GRID_SIZE);
-        const randomYPosition = Math.floor(Math.random() * GAME_CONFIG.GRID_SIZE);
-
-        // プレイヤーの初期位置と重ならないようにする
-        const isPlayerPosition = randomXPosition === GAME_CONFIG.PLAYER_INITIAL_POSITION.x &&
-                                 randomYPosition === GAME_CONFIG.PLAYER_INITIAL_POSITION.y;
-
-        if (!isPlayerPosition) {
-          enemies.push({
-            id: `enemy-${enemyIndex}`,
-            x: randomXPosition,
-            y: randomYPosition,
-            health: GAME_CONFIG.ENEMY_INITIAL_HEALTH,
-            damage: GAME_CONFIG.ENEMY_DAMAGE
-          });
-        }
-      }
-
-      setGameState({
-        ...state,
-        status: "playing",
-        player: {
-          ...state.player,
-          position: GAME_CONFIG.PLAYER_INITIAL_POSITION,
-        },
-        grid,
-        enemies,
-        items,
-      });
-      setMessage("ゲーム開始！アイテムを集めて敵を避けましょう。");
-    } catch (error) {
-      logError('Game Initialization', error, {
-        attemptedAction: 'initializeGame',
-      });
-      setMessage("ゲームの初期化に失敗しました。");
+  const scrollToBottom = () => {
+    if (settings.autoScroll) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   };
 
-  const handleAction = async (action: GameAction) => {
-    // 早期リターン: プレイ中でない場合は何もしない
-    if (gameState.status !== "playing") {
+  useEffect(() => {
+    scrollToBottom();
+  }, [chatState.messages, settings.autoScroll]);
+
+  const handleSendMessage = async (content: string) => {
+    // APIキーチェック
+    if (!settings.openaiApiKey) {
+      const errorMessage: Message = {
+        id: `error-${Date.now()}`,
+        role: "system",
+        content: "⚠️ OpenAI APIキーが設定されていません。右上の ≡ ボタンから設定してください。",
+        timestamp: Date.now(),
+        isTyping: false,
+      };
+      setChatState(prev => ({
+        ...prev,
+        messages: [...prev.messages, errorMessage],
+      }));
       return;
     }
 
+    // ユーザーメッセージを追加
+    const userMessage: Message = {
+      id: `user-${Date.now()}`,
+      role: "user",
+      content,
+      timestamp: Date.now(),
+    };
+
+    logDebug('Chat', 'ユーザーメッセージ受信', {
+      messageLength: content.length,
+      totalMessages: chatState.messages.length + 1,
+    });
+
+    setChatState(prev => ({
+      ...prev,
+      messages: [...prev.messages, userMessage],
+      isProcessing: true,
+      error: undefined,
+    }));
+
     try {
-      // Send action to backend (future: AI decision making)
-      await invoke<string>("update_game_state", { action: action.type });
-
-      // リセットアクションの早期リターン
-      if (action.type === "reset") {
-        await initializeGame();
-        return;
-      }
-
-      const newState = { ...gameState };
-      const { player } = newState;
-
-      // 移動アクション
-      if (action.type === "move") {
-        const newPosition = calculateNewPosition(player.position, action.direction);
-
-        // アイテム収集処理
-        const { newItems, newScore } = handleItemCollection(
-          newPosition,
-          newState.items,
-          player.score,
-          setMessage
-        );
-        newState.items = newItems;
-        player.score = newScore;
-
-        // 敵との衝突処理
-        const { newHealth, isGameOver } = handleEnemyCollision(
-          newPosition,
-          newState.enemies,
-          player.health,
-          setMessage
-        );
-        player.health = newHealth;
-
-        if (isGameOver) {
-          newState.status = "game_over";
-        }
-
-        player.position = newPosition;
-      }
-
-      // 攻撃アクション
-      if (action.type === "attack") {
-        const { newEnemies, newScore } = handleAttack(
-          player.position,
-          newState.enemies,
-          player.score,
-          setMessage
-        );
-        newState.enemies = newEnemies;
-        player.score = newScore;
-      }
-
-      // 勝利条件チェック
-      if (newState.items.length === 0 && newState.enemies.length === 0) {
-        newState.status = "won";
-        setMessage("クリア！おめでとうございます！");
-      }
-
-      setGameState(newState);
-    } catch (error) {
-      logError('Game Action', error, {
-        action: action.type,
-        playerPosition: gameState.player.position,
+      logDebug('Chat', 'OpenAI APIにリクエスト送信中', {
+        messageCount: chatState.messages.length + 1,
       });
-      setMessage("アクションの実行に失敗しました。");
+
+      // 設定からAPIキーとモデルを使用してOpenAI APIを呼び出し
+      const { createOpenAIService } = await import("./services/ai/openai");
+      const customService = createOpenAIService(
+        settings.openaiApiKey,
+        settings.openaiModel,
+        settings.temperature,
+        settings.maxTokens
+      );
+      
+      const response = await customService.chat([
+        ...chatState.messages,
+        userMessage,
+      ]);
+
+      // AIレスポンスを追加（タイプライター効果を有効化）
+      const assistantMessage: Message = {
+        id: `assistant-${Date.now()}`,
+        role: "assistant",
+        content: response,
+        timestamp: Date.now(),
+        isTyping: true,
+      };
+
+      setChatState(prev => ({
+        ...prev,
+        messages: [...prev.messages, assistantMessage],
+        isProcessing: false,
+      }));
+
+      logDebug('Chat', 'AI応答を受信しました', {
+        responseLength: response.length,
+      });
+    } catch (error) {
+      logError('Chat', error, {
+        attemptedAction: 'handleSendMessage',
+      });
+
+      const errorMessage: Message = {
+        id: `error-${Date.now()}`,
+        role: "system",
+        content: `エラー: ${error instanceof Error ? error.message : '不明なエラーが発生しました'}`,
+        timestamp: Date.now(),
+        isTyping: false,
+      };
+
+      setChatState(prev => ({
+        ...prev,
+        messages: [...prev.messages, errorMessage],
+        isProcessing: false,
+        error: error instanceof Error ? error.message : "不明なエラー",
+      }));
     }
   };
 
+  const handleClearHistory = () => {
+    setChatState({
+      messages: [
+        {
+          id: "system-reset",
+          role: "system",
+          content: "会話履歴がクリアされました。",
+          timestamp: Date.now(),
+          isTyping: false,
+        },
+      ],
+      isProcessing: false,
+    });
+  };
+
   return (
-    <div className="h-screen w-screen overflow-hidden bg-black font-mono flex flex-col">
-      {/* ターミナルヘッダー */}
-      <div className="bg-gray-900 border-b border-green-500 px-4 py-2 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <div className="w-3 h-3 rounded-full bg-red-500"></div>
-          <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-          <div className="w-3 h-3 rounded-full bg-green-500"></div>
+    <div className="h-screen w-screen overflow-hidden bg-black flex flex-col">
+      {/* 設定モーダル */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        onSave={handleSettingsSave}
+      />
+
+      {/* ヘッダー - シンプルなSF風 */}
+      <div className="bg-black border-b border-gray-800 px-6 py-3 flex items-center justify-between flex-shrink-0 animate-fadeIn">
+        <div className="text-white text-lg font-light tracking-widest">
+          AI INTERFACE
         </div>
-        <div className="text-green-400 text-sm">
-          terminal@game:~$ you-always-were-js
-        </div>
-        <div className="text-green-400 text-sm">
-          {new Date().toLocaleTimeString()}
+        <div className="flex items-center gap-6">
+          <button
+            onClick={() => setIsSettingsOpen(true)}
+            className="text-2xl text-gray-600 hover:text-white transition-all duration-300 hover:scale-110"
+            aria-label="設定を開く"
+            title="設定"
+          >
+            ⚙
+          </button>
+          <button
+            onClick={handleClearHistory}
+            className="text-xs text-gray-600 hover:text-white transition-colors uppercase tracking-wider"
+          >
+            Clear
+          </button>
         </div>
       </div>
 
-      {/* メインコンテンツ - スクロールなし */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* 左側: ゲームボードとメッセージ */}
-        <div className="flex-1 flex flex-col p-4 gap-4">
-          {/* タイトル */}
-          <div className="text-green-400 text-2xl font-bold border-b border-green-900 pb-2">
-            &gt; YOU ALWAYS WERE JS
-          </div>
-
-          {/* ゲームボード */}
-          <div className="flex-1 flex items-center justify-center">
-            <GameBoard
-              gameState={gameState}
-              onCellClick={(xPosition, yPosition) => {
-                logDebug('Cell Click', 'User clicked on cell', {
-                  x: xPosition,
-                  y: yPosition,
-                });
-              }}
-            />
-          </div>
-
-          {/* メッセージエリア - コンソール風 */}
-          <div className="bg-gray-900 border border-green-900 p-3 h-20">
-            <div className="text-green-400 font-mono text-sm">
-              <span className="text-green-600">&gt;</span> {message}
-              <span className="animate-pulse">_</span>
-            </div>
+      {/* メインチャットエリア */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {/* メッセージエリア */}
+        <div className="flex-1 overflow-y-auto px-8 py-6">
+          <div className="max-w-5xl">
+            {chatState.messages.map((message) => (
+              <ChatMessage key={message.id} message={message} />
+            ))}
+            {chatState.isProcessing && (
+              <div className="text-gray-500 text-sm animate-pulse flex items-center gap-2 my-4">
+                <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
+                <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
+                <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                <span className="ml-2">処理中</span>
+              </div>
+            )}
+            <div ref={messagesEndRef} />
           </div>
         </div>
 
-        {/* 右側: ステータスとコントロール */}
-        <div className="w-80 bg-gray-900 border-l border-green-900 flex flex-col overflow-hidden">
-          <StatusBar gameState={gameState} />
-          <ActionPanel
-            gameState={gameState}
-            onAction={handleAction}
+        {/* 入力エリア */}
+        <div className="flex-shrink-0">
+          <ChatInput
+            onSend={handleSendMessage}
+            disabled={chatState.isProcessing}
           />
+        </div>
+      </div>
+
+      {/* ステータスバー - ミニマル */}
+      <div className="bg-black border-t border-gray-800 px-6 py-2 text-xs text-gray-600 flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-6">
+          <span className="uppercase tracking-wider">Messages: {chatState.messages.length}</span>
+          <span className={`flex items-center gap-2 ${chatState.isProcessing ? "text-gray-400" : "text-gray-500"}`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${chatState.isProcessing ? "bg-gray-400 animate-pulse" : "bg-gray-600"}`}></span>
+            {chatState.isProcessing ? "Processing" : "Ready"}
+          </span>
+        </div>
+        <div className="uppercase tracking-wider">
+          {chatState.error ? "Error" : "Online"}
         </div>
       </div>
     </div>
@@ -364,4 +268,3 @@ function App() {
 }
 
 export default App;
-

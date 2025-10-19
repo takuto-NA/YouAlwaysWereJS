@@ -1,12 +1,13 @@
 /**
  * LangGraph Workflow Integration
  * 
- * This module will define decision workflows using LangGraph:
- * - Game state analysis
- * - Strategy generation
- * - Dynamic difficulty adjustment
+ * このモジュールは将来、LangGraphを使用して以下を実装予定:
+ * - チャット対話フローの管理
+ * - コンテキストベースの意思決定
+ * - マルチステップ推論
  */
 
+import { Message } from "../../types/chat";
 import { GameState, GameAction } from "../../types/game";
 
 export interface WorkflowNode {
@@ -68,7 +69,34 @@ export class GameWorkflow {
   }
 }
 
+/**
+ * チャット対話用のワークフロー（将来実装）
+ */
+export interface ChatWorkflowNode {
+  id: string;
+  type: "analysis" | "decision" | "response";
+  execute: (messages: Message[]) => Promise<unknown>;
+}
+
+export class ChatWorkflow {
+  private nodes: Map<string, ChatWorkflowNode> = new Map();
+
+  addNode(node: ChatWorkflowNode): void {
+    this.nodes.set(node.id, node);
+  }
+
+  /**
+   * LangGraphを使用したチャットフローの実行（将来実装）
+   */
+  async execute(messages: Message[]): Promise<string> {
+    // プレースホルダー実装
+    // 将来: LangGraphによる複雑な対話フローを実装
+    return "LangGraph統合は将来実装予定です";
+  }
+}
+
 // Example workflow configuration
+export const chatWorkflow = new ChatWorkflow();
 export const gameDecisionWorkflow = new GameWorkflow();
 
 // Add decision nodes (placeholder)

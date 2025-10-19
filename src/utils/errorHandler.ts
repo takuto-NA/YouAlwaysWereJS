@@ -24,12 +24,28 @@ export function logError(
   const errorMessage = error instanceof Error ? error.message : String(error);
   const errorStack = error instanceof Error ? error.stack : undefined;
 
-  console.error(`[${context} Error]`, {
-    message: errorMessage,
-    stack: errorStack,
-    timestamp: new Date().toISOString(),
-    ...additionalData,
-  });
+  // 開発環境では詳細情報を見やすく表示
+  if (import.meta.env.DEV) {
+    console.group(`🔴 [${context} Error]`);
+    console.error('Message:', errorMessage);
+    if (errorStack) {
+      console.error('Stack:', errorStack);
+    }
+    if (additionalData && Object.keys(additionalData).length > 0) {
+      console.error('Additional Data:', additionalData);
+    }
+    console.error('Timestamp:', new Date().toISOString());
+    console.error('Full Error Object:', error);
+    console.groupEnd();
+  } else {
+    // 本番環境ではシンプルに
+    console.error(`[${context} Error]`, {
+      message: errorMessage,
+      stack: errorStack,
+      timestamp: new Date().toISOString(),
+      ...additionalData,
+    });
+  }
 }
 
 /**
@@ -48,11 +64,21 @@ export function logWarning(
   message: string,
   data?: Record<string, unknown>
 ): void {
-  console.warn(`[${context} Warning]`, {
-    message,
-    timestamp: new Date().toISOString(),
-    ...data,
-  });
+  if (import.meta.env.DEV) {
+    console.group(`⚠️ [${context} Warning]`);
+    console.warn('Message:', message);
+    if (data && Object.keys(data).length > 0) {
+      console.warn('Data:', data);
+    }
+    console.warn('Timestamp:', new Date().toISOString());
+    console.groupEnd();
+  } else {
+    console.warn(`[${context} Warning]`, {
+      message,
+      timestamp: new Date().toISOString(),
+      ...data,
+    });
+  }
 }
 
 /**
@@ -73,11 +99,13 @@ export function logDebug(
 ): void {
   // 開発環境でのみ出力（本番では無効化）
   if (import.meta.env.DEV) {
-    console.log(`[${context} Debug]`, {
-      message,
-      timestamp: new Date().toISOString(),
-      ...data,
-    });
+    console.group(`🔵 [${context} Debug]`);
+    console.log('Message:', message);
+    if (data && Object.keys(data).length > 0) {
+      console.log('Data:', data);
+    }
+    console.log('Timestamp:', new Date().toISOString());
+    console.groupEnd();
   }
 }
 
