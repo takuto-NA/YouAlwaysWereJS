@@ -233,14 +233,16 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
               onChange={(e) => setSettings({ ...settings, geminiModel: e.target.value })}
               className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-gray-500"
             >
-              <optgroup label="Gemini 2.0 (Experimental)">
-                <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash ⭐ (Experimental)</option>
+              <optgroup label="Gemini 2.5 (Latest)">
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash ⭐ (Latest)</option>
+                <option value="gemini-2.5-pro">Gemini 2.5 Pro (Premium)</option>
               </optgroup>
-              <optgroup label="Gemini 1.5 Pro">
+              <optgroup label="Gemini 2.0">
+                <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Experimental)</option>
+              </optgroup>
+              <optgroup label="Gemini 1.5">
                 <option value="gemini-1.5-pro-latest">Gemini 1.5 Pro (Latest)</option>
                 <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
-              </optgroup>
-              <optgroup label="Gemini 1.5 Flash">
                 <option value="gemini-1.5-flash-latest">Gemini 1.5 Flash (Latest)</option>
                 <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
                 <option value="gemini-1.5-flash-8b-latest">Gemini 1.5 Flash-8B (Latest)</option>
@@ -248,7 +250,7 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
               </optgroup>
             </select>
             <p className="text-xs text-gray-600">
-              2.0 Flash: Latest experimental / 1.5 Pro: Best quality / 1.5 Flash: Fast & efficient
+              2.5 Flash: Latest & balanced (無料枠: RPM 10) / 2.5 Pro: Premium quality (無料枠: RPM 2) / 1.5 Flash: Fast (無料枠: RPM 15)
             </p>
           </div>
             </>
