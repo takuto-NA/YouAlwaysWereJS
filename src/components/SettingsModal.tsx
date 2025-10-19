@@ -568,14 +568,14 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                   id="max-tokens-input"
                   type="number"
                   min="100"
-                  max="4000"
+                  max="8192"
                   step="100"
-                  value={settings.maxTokens || 1000}
+                  value={settings.maxTokens || 4000}
                   onChange={(e) => setSettings({ ...settings, maxTokens: Number(e.target.value) })}
                   className="w-full bg-black border border-gray-700 text-white px-4 py-2 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
                 />
                 <p className="text-xs text-gray-600">
-                  Maximum response length. Uses max_completion_tokens for GPT-5/o1
+                  Maximum response length. OpenAI: 4000, Gemini: 8192. Uses max_completion_tokens for GPT-5/o1, maxOutputTokens for Gemini
                 </p>
               </div>
             </div>

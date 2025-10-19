@@ -33,7 +33,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   theme: "dark",
   autoScroll: true,
   temperature: 0.7,
-  maxTokens: 1000,
+  maxTokens: 4000, // 長い応答に対応するため増やす
 };
 
 /**

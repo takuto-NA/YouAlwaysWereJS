@@ -149,8 +149,36 @@ export class LangGraphChatWorkflow {
       // プロバイダーに応じたモデルでレスポンスを取得
       const response = await this.model.invoke(langchainMessages);
 
-      const content =
-        typeof response.content === "string" ? response.content : JSON.stringify(response.content);
+      // レスポンスの型を確認してログ出力
+      logDebug("LangChain", `レスポンス型確認 (${providerName})`, {
+        provider: this.provider,
+        contentType: typeof response.content,
+        isArray: Array.isArray(response.content),
+        content: response.content,
+      });
+
+      // コンテンツの適切な抽出
+      let content: string;
+      if (typeof response.content === "string") {
+        content = response.content;
+      } else if (Array.isArray(response.content)) {
+        // 配列の場合、各要素からテキストを抽出して結合
+        content = response.content
+          .map((item) => {
+            if (typeof item === "string") {
+              return item;
+            } else if (item && typeof item === "object" && "text" in item) {
+              return item.text;
+            }
+            return JSON.stringify(item);
+          })
+          .join("");
+      } else if (response.content && typeof response.content === "object") {
+        // オブジェクトの場合、textプロパティがあればそれを使用
+        content = (response.content as { text?: string }).text || JSON.stringify(response.content);
+      } else {
+        content = String(response.content);
+      }
 
       logDebug("LangChain", `レスポンス受信完了 (${providerName})`, {
         provider: this.provider,
