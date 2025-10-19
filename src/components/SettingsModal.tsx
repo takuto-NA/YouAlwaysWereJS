@@ -575,7 +575,8 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                   className="w-full bg-black border border-gray-700 text-white px-4 py-2 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
                 />
                 <p className="text-xs text-gray-600">
-                  Maximum response length. OpenAI: 4000, Gemini: 8192. Uses max_completion_tokens for GPT-5/o1, maxOutputTokens for Gemini
+                  Maximum response length. OpenAI: 4000, Gemini: 8192. Uses max_completion_tokens
+                  for GPT-5/o1, maxOutputTokens for Gemini
                 </p>
               </div>
             </div>
