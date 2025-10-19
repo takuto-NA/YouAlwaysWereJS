@@ -20,6 +20,10 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig({
   plugins: [react()], // ReactプラグインでJSXを処理
 
+  // GitHub Pagesデプロイ時のベースパス
+  // 本番環境ではリポジトリ名をベースパスに設定
+  base: process.env.NODE_ENV === 'production' ? '/YouAlwaysWereJS/' : '/',
+
   // Tauriとの統合: ターミナル画面をクリアしない（Tauriのログを保持）
   clearScreen: false,
 

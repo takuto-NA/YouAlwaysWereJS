@@ -2,6 +2,10 @@
 
 LangGraphとOpenAI APIを使用したMCP対話型チャットアプリケーション（React + TypeScript + Tauri + TailwindCSS）
 
+[![Deploy to GitHub Pages](https://github.com/[YOUR_USERNAME]/YouAlwaysWereJS/workflows/Deploy%20to%20GitHub%20Pages/badge.svg)](https://github.com/[YOUR_USERNAME]/YouAlwaysWereJS/actions)
+
+**🎮 [Play Online (GitHub Pages)](https://[YOUR_USERNAME].github.io/YouAlwaysWereJS/)**
+
 ## 概要
 
 このアプリケーションは、以下の技術を統合した対話型チャットインターフェースです：
@@ -10,7 +14,25 @@ LangGraphとOpenAI APIを使用したMCP対話型チャットアプリケーシ�
 - **MCP (Model Context Protocol)**: AIモデル間の通信プロトコル（将来実装予定）
 - **Tauri**: クロスプラットフォームデスクトップアプリ
 
-## クイックスタート
+## 🎮 オンラインで試す（推奨）
+
+**GitHub Pages版 - インストール不要:**
+
+```
+https://[YOUR_USERNAME].github.io/YouAlwaysWereJS/
+```
+
+✨ **特徴:**
+- ブラウザでそのまま動作
+- インストール・ビルド不要
+- 設定画面でOpenAI APIキーを入力するだけ
+- すべての機能が利用可能
+
+📚 **詳細ガイド**: [DEPLOYMENT.md](DEPLOYMENT.md)
+
+---
+
+## クイックスタート（ローカル開発）
 
 ### 1. 環境設定（オプション）
 
