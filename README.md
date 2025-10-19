@@ -2,9 +2,9 @@
 
 LangGraphとOpenAI APIを使用したMCP対話型チャットアプリケーション（React + TypeScript + Tauri + TailwindCSS）
 
-[![Deploy to GitHub Pages](https://github.com/[YOUR_USERNAME]/YouAlwaysWereJS/workflows/Deploy%20to%20GitHub%20Pages/badge.svg)](https://github.com/[YOUR_USERNAME]/YouAlwaysWereJS/actions)
+[![Deploy to GitHub Pages](https://github.com/takuto-na/YouAlwaysWereJS/workflows/Deploy%20to%20GitHub%20Pages/badge.svg)](https://github.com/takuto-na/YouAlwaysWereJS/actions)
 
-**🎮 [Play Online (GitHub Pages)](https://[YOUR_USERNAME].github.io/YouAlwaysWereJS/)**
+**🎮 [Play Online (GitHub Pages)](https://takuto-na.github.io/YouAlwaysWereJS/)**
 
 ## 概要
 
@@ -19,7 +19,7 @@ LangGraphとOpenAI APIを使用したMCP対話型チャットアプリケーシ�
 **GitHub Pages版 - インストール不要:**
 
 ```
-https://[YOUR_USERNAME].github.io/YouAlwaysWereJS/
+https://takuto-na.github.io/YouAlwaysWereJS/
 ```
 
 ✨ **特徴:**

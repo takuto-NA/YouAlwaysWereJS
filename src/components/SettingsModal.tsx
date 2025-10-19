@@ -3,6 +3,7 @@
  * APIキーやアプリケーション設定を管理
  */
 import { useState, useEffect } from "react";
+import { Cog6ToothIcon, XMarkIcon, CheckCircleIcon, XCircleIcon } from "@heroicons/react/24/outline";
 import { AppSettings, loadSettings, saveSettings } from "../utils/storage";
 import { logDebug } from "../utils/errorHandler";
 import { SAVE_MESSAGE_TIMEOUT_MS } from "../constants/animations";
@@ -31,7 +32,7 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
       setIsSaving(true);
       saveSettings(settings);
       onSave(settings);
-      setSaveMessage("✓ 設定を保存しました");
+      setSaveMessage("SAVED");
       logDebug('Settings', '設定を保存しました', {
         hasApiKey: settings.openaiApiKey.length > 0,
         typewriterSpeed: settings.typewriterSpeed,
@@ -44,7 +45,7 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
         onClose();
       }, SAVE_MESSAGE_TIMEOUT_MS);
     } catch (error) {
-      setSaveMessage("✗ 保存に失敗しました");
+      setSaveMessage("ERROR: Failed to save");
     } finally {
       setIsSaving(false);
     }
@@ -70,17 +71,17 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
         {/* ヘッダー */}
         <div className="sticky top-0 bg-black border-b border-gray-700 px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="text-2xl">⚙</span>
+            <Cog6ToothIcon className="w-7 h-7 text-white" />
             <h2 className="text-xl font-light text-white uppercase tracking-widest">
               Settings
             </h2>
           </div>
           <button
             onClick={handleClose}
-            className="text-gray-600 hover:text-white transition-colors text-2xl"
+            className="text-gray-600 hover:text-white transition-colors"
             aria-label="閉じる"
           >
-            ✕
+            <XMarkIcon className="w-6 h-6" />
           </button>
         </div>
 
@@ -270,7 +271,7 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
           {/* 保存メッセージ */}
           {saveMessage && (
             <div className={`text-center py-2 uppercase tracking-wider text-sm ${
-              saveMessage.startsWith("✓") 
+              saveMessage.startsWith("SAVED") 
                 ? "text-white" 
                 : "text-red-500"
             }`}>

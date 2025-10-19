@@ -3,6 +3,7 @@
  * LangGraphとOpenAI APIを使用してMCP経由で対話
  */
 import { useState, useRef, useEffect } from "react";
+import { Cog6ToothIcon, ExclamationTriangleIcon } from "@heroicons/react/24/outline";
 import ChatMessage from "./components/ChatMessage";
 import ChatInput from "./components/ChatInput";
 import SettingsModal from "./components/SettingsModal";
@@ -34,7 +35,7 @@ function App() {
       role: "system",
       content: hasKey 
         ? "システム起動完了。OpenAI API経由でMCPを使用した対話が可能です。"
-        : "⚠️ OpenAI APIキーが設定されていません。右上の ≡ ボタンから設定してください。",
+        : "WARNING: OpenAI APIキーが設定されていません。右上の設定ボタンから設定してください。",
       timestamp: Date.now(),
       isTyping: false,
     };
@@ -58,7 +59,7 @@ function App() {
     const successMessage: Message = {
       id: `system-${Date.now()}`,
       role: "system",
-      content: "✓ 設定を保存しました。チャットを開始できます。",
+      content: "SAVED: 設定を保存しました。チャットを開始できます。",
       timestamp: Date.now(),
       isTyping: false,
     };
@@ -85,7 +86,7 @@ function App() {
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         role: "system",
-        content: "⚠️ OpenAI APIキーが設定されていません。右上の ≡ ボタンから設定してください。",
+        content: "WARNING: OpenAI APIキーが設定されていません。右上の設定ボタンから設定してください。",
         timestamp: Date.now(),
         isTyping: false,
       };
@@ -207,11 +208,11 @@ function App() {
         <div className="flex items-center gap-6">
           <button
             onClick={() => setIsSettingsOpen(true)}
-            className="text-2xl text-gray-600 hover:text-white transition-all duration-300 hover:scale-110"
+            className="text-gray-600 hover:text-white transition-all duration-300 hover:scale-110"
             aria-label="設定を開く"
             title="設定"
           >
-            ⚙
+            <Cog6ToothIcon className="w-6 h-6" />
           </button>
           <button
             onClick={handleClearHistory}
@@ -236,7 +237,7 @@ function App() {
                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: ANIMATION_DELAYS.SHORT}}></div>
                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: ANIMATION_DELAYS.MEDIUM}}></div>
                    <span className="ml-2">処理中</span>
-                 </div>
+          </div>
                )}
             <div ref={messagesEndRef} />
           </div>

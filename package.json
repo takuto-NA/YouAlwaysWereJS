@@ -2,9 +2,7 @@
   "name": "you-always-were-js",
   "version": "0.1.0",
   "description": "A game prototype using Tauri and TailwindCSS",
-
   "type": "module",
-
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -16,13 +14,12 @@
     "check:quality": "npm run type-check",
     "check:quick": "npm run type-check && echo Quick check passed!"
   },
-
   "dependencies": {
+    "@heroicons/react": "^2.2.0",
     "@tauri-apps/api": "^2.1.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
-
   "devDependencies": {
     "@tauri-apps/cli": "^2.1.0",
     "@types/react": "^18.3.12",
@@ -35,4 +32,3 @@
     "vite": "^5.4.11"
   }
 }
-
