@@ -39,4 +39,6 @@ logs/
 config/secrets.json
 .api-keys
 
+# AI assistants
 .serena
+.claude/
