@@ -5,6 +5,8 @@
  */
 import { Message } from "../types/chat";
 import { useTypewriter } from "../hooks/useTypewriter";
+import { DEFAULT_TYPEWRITER_SPEED_MS } from "../constants/typewriter";
+import { ANIMATION_DELAYS } from "../constants/animations";
 
 interface ChatMessageProps {
   message: Message;
@@ -19,10 +21,11 @@ function ChatMessage({ message, enableTypewriter = true }: ChatMessageProps) {
   // AIの応答のみタイプライター効果を適用
   const shouldUseTypewriter = enableTypewriter && isAssistant && message.isTyping !== false;
 
-  // 設定から速度を取得（デフォルト20ms）
+  // 設定から速度を取得
+  // localStorageから取得できない場合はデフォルト値を使用
   const typewriterSpeed = typeof window !== 'undefined' 
-    ? JSON.parse(localStorage.getItem('chat_app_settings') || '{}').typewriterSpeed || 20
-    : 20;
+    ? JSON.parse(localStorage.getItem('chat_app_settings') || '{}').typewriterSpeed || DEFAULT_TYPEWRITER_SPEED_MS
+    : DEFAULT_TYPEWRITER_SPEED_MS;
 
   const { displayedText, isTyping } = useTypewriter({
     text: message.content,
@@ -53,13 +56,13 @@ function ChatMessage({ message, enableTypewriter = true }: ChatMessageProps) {
           }`}>
             {isUser ? 'You' : 'AI'}
           </div>
-          {isTyping && (
-            <div className="flex items-center gap-1">
-              <div className="w-1 h-1 bg-gray-500 rounded-full animate-pulse"></div>
-              <div className="w-1 h-1 bg-gray-500 rounded-full animate-pulse" style={{animationDelay: '0.2s'}}></div>
-              <div className="w-1 h-1 bg-gray-500 rounded-full animate-pulse" style={{animationDelay: '0.4s'}}></div>
-            </div>
-          )}
+             {isTyping && (
+               <div className="flex items-center gap-1">
+                 <div className="w-1 h-1 bg-gray-500 rounded-full animate-pulse"></div>
+                 <div className="w-1 h-1 bg-gray-500 rounded-full animate-pulse" style={{animationDelay: ANIMATION_DELAYS.MEDIUM}}></div>
+                 <div className="w-1 h-1 bg-gray-500 rounded-full animate-pulse" style={{animationDelay: ANIMATION_DELAYS.LONG}}></div>
+               </div>
+             )}
         </div>
         
         {/* メッセージ本文 */}

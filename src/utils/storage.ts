@@ -2,6 +2,7 @@
  * ローカルストレージを使用した設定の永続化
  * セキュアな方法でAPIキーなどを保存
  */
+import { DEFAULT_TYPEWRITER_SPEED_MS } from "../constants/typewriter";
 
 const STORAGE_KEY = 'chat_app_settings';
 
@@ -19,7 +20,7 @@ export interface AppSettings {
 const DEFAULT_SETTINGS: AppSettings = {
   openaiApiKey: '',
   openaiModel: 'gpt-5',
-  typewriterSpeed: 20,
+  typewriterSpeed: DEFAULT_TYPEWRITER_SPEED_MS,
   mcpEndpoint: 'ws://localhost:8080',
   theme: 'dark',
   autoScroll: true,

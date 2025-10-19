@@ -10,6 +10,7 @@ import { Message, ChatState } from "./types/chat";
 import { openAIService } from "./services/ai";
 import { logError, logDebug } from "./utils/errorHandler";
 import { loadSettings, hasApiKey, AppSettings } from "./utils/storage";
+import { ANIMATION_DELAYS } from "./constants/animations";
 
 function App() {
   const [chatState, setChatState] = useState<ChatState>({
@@ -229,14 +230,14 @@ function App() {
             {chatState.messages.map((message) => (
               <ChatMessage key={message.id} message={message} />
             ))}
-            {chatState.isProcessing && (
-              <div className="text-gray-500 text-sm animate-pulse flex items-center gap-2 my-4">
-                <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
-                <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
-                <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                <span className="ml-2">処理中</span>
-              </div>
-            )}
+               {chatState.isProcessing && (
+                 <div className="text-gray-500 text-sm animate-pulse flex items-center gap-2 my-4">
+                   <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
+                   <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: ANIMATION_DELAYS.SHORT}}></div>
+                   <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{animationDelay: ANIMATION_DELAYS.MEDIUM}}></div>
+                   <span className="ml-2">処理中</span>
+                 </div>
+               )}
             <div ref={messagesEndRef} />
           </div>
         </div>

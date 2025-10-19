@@ -133,57 +133,15 @@ YouAlwaysWereJS/
 
 ## コーディングルール
 
-### ✅ チェックリスト
+詳細なチェックリストとベストプラクティスは [CODING_RULES.md](CODING_RULES.md) を参照してください。
 
-- [ ] エラーは `logError()` でコンソール出力（コンテキスト含む）
-- [ ] マジックナンバー禁止 → 定数化
-- [ ] DRY原則遵守（重複コード禁止）
-- [ ] 変数名・関数名は省略せず完全な単語を使用
-- [ ] 早期リターンでネスト削減
-- [ ] 1関数1責務（30行以内目安）
-
-### ❌ Bad / ✅ Good
-
-```typescript
-// ❌ Bad - 省略・エラー処理なし
-async function send(msg: string) {
-  const res = await fetch(url, { body: msg });
-  return res.json();
-}
-
-// ✅ Good - 完全な名前・エラー処理
-async function sendMessage(message: string): Promise<Response> {
-  try {
-    const response = await fetch(API_ENDPOINT, {
-      method: "POST",
-      body: JSON.stringify({ message }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.statusText}`);
-    }
-
-    return await response.json();
-  } catch (error) {
-    logError('Message Send', error, { messageLength: message.length });
-    throw error;
-  }
-}
-```
-
-### エラー処理
-
-```typescript
-// ✅ Good - コンテキスト付きエラーログ
-try {
-  await openAIService.chat(messages);
-} catch (error) {
-  logError('Chat', error, {
-    attemptedAction: 'chat',
-    messageCount: messages.length,
-  });
-}
-```
+**クイックチェック:**
+- ✅ エラーは `logError()` で記録
+- ✅ マジックナンバー禁止
+- ✅ DRY原則遵守
+- ✅ 完全な変数名
+- ✅ 早期リターン
+- ✅ 1関数1責務
 
 ## 環境変数（オプション）
 

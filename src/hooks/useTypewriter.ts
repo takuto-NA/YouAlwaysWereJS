@@ -3,6 +3,7 @@
  * 文字列を一文字ずつ表示するアニメーション
  */
 import { useState, useEffect } from "react";
+import { HOOK_DEFAULT_SPEED_MS } from "../constants/typewriter";
 
 interface UseTypewriterOptions {
   text: string;
@@ -14,7 +15,7 @@ interface UseTypewriterOptions {
 
 export function useTypewriter({
   text,
-  speed = 30,
+  speed = HOOK_DEFAULT_SPEED_MS,
   enabled = true,
   onComplete,
   onProgress,

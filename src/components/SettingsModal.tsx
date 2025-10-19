@@ -5,6 +5,7 @@
 import { useState, useEffect } from "react";
 import { AppSettings, loadSettings, saveSettings } from "../utils/storage";
 import { logDebug } from "../utils/errorHandler";
+import { SAVE_MESSAGE_TIMEOUT_MS } from "../constants/animations";
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -37,10 +38,11 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
         autoScroll: settings.autoScroll,
       });
       
+      // 保存完了メッセージを一定時間後に消去してモーダルを閉じる
       setTimeout(() => {
         setSaveMessage("");
         onClose();
-      }, 1500);
+      }, SAVE_MESSAGE_TIMEOUT_MS);
     } catch (error) {
       setSaveMessage("✗ 保存に失敗しました");
     } finally {
@@ -145,15 +147,15 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                 <option value="gpt-3.5-turbo">GPT-3.5 Turbo (低コスト)</option>
               </optgroup>
             </select>
-            <p className="text-xs text-gray-500">
-              💡 GPT-5: 標準版（推奨） / GPT-5-mini: 高速版 / GPT-5-pro: 最高性能
+            <p className="text-xs text-gray-600">
+              GPT-5: Standard / GPT-5-mini: Fast / GPT-5-pro: Maximum Performance
             </p>
           </div>
 
           {/* タイプライター速度 */}
           <div className="space-y-3">
-            <label className="text-green-400 font-mono font-bold flex items-center gap-2">
-              ⚡ タイプライター速度
+            <label className="text-white font-light uppercase tracking-wider text-sm">
+              Typewriter Speed
             </label>
             <div className="space-y-2">
               <input
@@ -163,36 +165,36 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                 step="5"
                 value={settings.typewriterSpeed}
                 onChange={(e) => setSettings({ ...settings, typewriterSpeed: Number(e.target.value) })}
-                className="w-full accent-green-500"
+                className="w-full accent-gray-400"
               />
-              <div className="flex items-center justify-between text-xs text-gray-500">
-                <span>高速 (10ms)</span>
-                <span className="text-green-400 font-mono font-bold">
+              <div className="flex items-center justify-between text-xs text-gray-600 uppercase tracking-wider">
+                <span>Fast (10ms)</span>
+                <span className="text-white">
                   {settings.typewriterSpeed}ms
                 </span>
-                <span>低速 (100ms)</span>
+                <span>Slow (100ms)</span>
               </div>
             </div>
-            <p className="text-xs text-gray-500">
-              💡 数値が小さいほど速く表示されます
+            <p className="text-xs text-gray-600">
+              Lower values = faster display
             </p>
           </div>
 
           {/* MCP Endpoint */}
           <div className="space-y-3">
-            <label className="text-green-400 font-mono font-bold flex items-center gap-2">
-              🔌 MCP エンドポイント
-              <span className="text-xs text-gray-500 font-normal">(オプション)</span>
+            <label className="text-white font-light uppercase tracking-wider text-sm">
+              MCP Endpoint
+              <span className="text-xs text-gray-600 normal-case ml-2">(Optional)</span>
             </label>
             <input
               type="text"
               value={settings.mcpEndpoint}
               onChange={(e) => setSettings({ ...settings, mcpEndpoint: e.target.value })}
               placeholder="ws://localhost:8080"
-              className="w-full bg-black border border-green-900 text-green-400 px-4 py-3 font-mono text-sm focus:outline-none focus:border-green-500 rounded"
+              className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-gray-500"
             />
-            <p className="text-xs text-gray-500">
-              💡 Model Context Protocol サーバーのWebSocketエンドポイント（将来実装予定）
+            <p className="text-xs text-gray-600">
+              Model Context Protocol WebSocket endpoint (future implementation)
             </p>
           </div>
 
@@ -203,27 +205,27 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                 type="checkbox"
                 checked={settings.autoScroll}
                 onChange={(e) => setSettings({ ...settings, autoScroll: e.target.checked })}
-                className="w-5 h-5 accent-green-500"
+                className="w-5 h-5 accent-gray-400"
               />
-              <span className="text-green-400 font-mono font-bold group-hover:text-green-300 transition-colors">
-                📜 自動スクロール
+              <span className="text-white font-light uppercase tracking-wider text-sm group-hover:text-gray-400 transition-colors">
+                Auto Scroll
               </span>
             </label>
-            <p className="text-xs text-gray-500 ml-8">
-              💡 新しいメッセージが表示されたら自動的にスクロールします
+            <p className="text-xs text-gray-600 ml-8">
+              Automatically scroll when new messages appear
             </p>
           </div>
 
           {/* 詳細設定 */}
-          <details className="border-t border-green-900 pt-4">
-            <summary className="text-green-400 font-mono font-bold cursor-pointer hover:text-green-300 transition-colors">
-              🔧 詳細設定（上級者向け）
+          <details className="border-t border-gray-800 pt-4">
+            <summary className="text-white font-light uppercase tracking-wider text-sm cursor-pointer hover:text-gray-400 transition-colors">
+              Advanced Settings
             </summary>
             <div className="mt-4 space-y-4">
               {/* Temperature */}
               <div className="space-y-2">
-                <label className="text-green-400 font-mono text-sm flex items-center gap-2">
-                  🌡️ Temperature（創造性）
+                <label className="text-white font-light uppercase tracking-wider text-sm">
+                  Temperature (Creativity)
                 </label>
                 <input
                   type="range"
@@ -232,22 +234,22 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                   step="0.1"
                   value={settings.temperature || 0.7}
                   onChange={(e) => setSettings({ ...settings, temperature: Number(e.target.value) })}
-                  className="w-full accent-green-500"
+                  className="w-full accent-gray-400"
                 />
-                <div className="flex items-center justify-between text-xs text-gray-500">
-                  <span>保守的 (0.0)</span>
-                  <span className="text-green-400 font-mono">{settings.temperature || 0.7}</span>
-                  <span>創造的 (2.0)</span>
+                <div className="flex items-center justify-between text-xs text-gray-600 uppercase tracking-wider">
+                  <span>Conservative (0.0)</span>
+                  <span className="text-white">{settings.temperature || 0.7}</span>
+                  <span>Creative (2.0)</span>
                 </div>
-                <p className="text-xs text-gray-500">
-                  💡 GPT-4以前のモデルで有効。GPT-5/o1ではデフォルト値(1.0)固定
+                <p className="text-xs text-gray-600">
+                  Only for GPT-4 and earlier. GPT-5/o1 use default (1.0)
                 </p>
               </div>
 
               {/* Max Tokens */}
               <div className="space-y-2">
-                <label className="text-green-400 font-mono text-sm flex items-center gap-2">
-                  📏 最大トークン数（max_completion_tokens）
+                <label className="text-white font-light uppercase tracking-wider text-sm">
+                  Max Tokens (max_completion_tokens)
                 </label>
                 <input
                   type="number"
@@ -256,10 +258,10 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                   step="100"
                   value={settings.maxTokens || 1000}
                   onChange={(e) => setSettings({ ...settings, maxTokens: Number(e.target.value) })}
-                  className="w-full bg-black border border-green-900 text-green-400 px-4 py-2 font-mono text-sm focus:outline-none focus:border-green-500 rounded"
+                  className="w-full bg-black border border-gray-700 text-white px-4 py-2 text-sm focus:outline-none focus:border-gray-500"
                 />
-                <p className="text-xs text-gray-500">
-                  💡 応答の最大長。GPT-5/o1では自動的にmax_completion_tokensを使用
+                <p className="text-xs text-gray-600">
+                  Maximum response length. Uses max_completion_tokens for GPT-5/o1
                 </p>
               </div>
             </div>
@@ -267,10 +269,10 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
 
           {/* 保存メッセージ */}
           {saveMessage && (
-            <div className={`text-center py-2 rounded ${
+            <div className={`text-center py-2 uppercase tracking-wider text-sm ${
               saveMessage.startsWith("✓") 
-                ? "text-green-400 bg-green-900/20" 
-                : "text-red-400 bg-red-900/20"
+                ? "text-white" 
+                : "text-red-500"
             }`}>
               {saveMessage}
             </div>
@@ -278,19 +280,19 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
         </div>
 
         {/* フッター */}
-        <div className="sticky bottom-0 bg-gray-900 border-t-2 border-green-500 px-6 py-4 flex items-center justify-between">
+        <div className="sticky bottom-0 bg-black border-t border-gray-700 px-6 py-4 flex items-center justify-between">
           <button
             onClick={handleClose}
-            className="px-6 py-2 border border-gray-700 text-gray-400 hover:text-green-400 hover:border-green-500 transition-colors font-mono rounded"
+            className="px-6 py-2 border border-gray-700 text-gray-600 hover:text-white transition-colors uppercase tracking-wider text-sm"
           >
-            キャンセル
+            Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={isSaving || !settings.openaiApiKey.trim()}
-            className="px-8 py-2 bg-green-900 hover:bg-green-800 text-green-400 font-mono font-bold border border-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed rounded"
+            className="px-8 py-2 bg-white text-black hover:bg-gray-300 border border-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm"
           >
-            {isSaving ? "保存中..." : "💾 保存"}
+            {isSaving ? "Saving..." : "Save"}
           </button>
         </div>
       </div>
