@@ -1,125 +1,112 @@
 /**
  * LangGraph Workflow Integration
  * 
- * このモジュールは将来、LangGraphを使用して以下を実装予定:
- * - チャット対話フローの管理
- * - コンテキストベースの意思決定
- * - マルチステップ推論
+ * LangChainを使用してチャット対話を管理:
+ * - ChatOpenAI経由でのAPI呼び出し
+ * - メッセージ形式の変換
+ * - エラーハンドリング
  */
 
+import { ChatOpenAI } from "@langchain/openai";
+import { BaseMessage, HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
 import { Message } from "../../types/chat";
-import { GameState, GameAction } from "../../types/game";
+import { logDebug, logError } from "../../utils/errorHandler";
 
-export interface WorkflowNode {
-  id: string;
-  type: "decision" | "action" | "analysis";
-  execute: (state: GameState) => Promise<unknown>;
-}
+/**
+ * LangChainを使用したチャットワークフロー
+ */
+export class LangGraphChatWorkflow {
+  private model: ChatOpenAI;
 
-export interface WorkflowEdge {
-  from: string;
-  to: string;
-  condition?: (state: GameState) => boolean;
-}
+  constructor(apiKey: string, modelName: string = "gpt-4o", temperature?: number, maxTokens?: number) {
+    // モデルに応じてパラメータを調整
+    const isGpt5 = modelName.startsWith('gpt-5');
+    const isO1 = modelName.startsWith('o1');
+    
+    // LangChainのChatOpenAIは apiKey または openAIApiKey を受け付ける
+    const modelConfig: Record<string, unknown> = {
+      apiKey: apiKey,  // LangChain v0.3以降は apiKey を推奨
+      model: modelName,  // modelName の代わりに model を使用
+    };
 
-export class GameWorkflow {
-  private nodes: Map<string, WorkflowNode> = new Map();
-  private edges: WorkflowEdge[] = [];
+    // GPT-4以前のモデルのみtemperatureをカスタマイズ可能
+    if (!isO1 && !isGpt5 && temperature !== undefined) {
+      modelConfig.temperature = temperature;
+    }
 
-  addNode(node: WorkflowNode): void {
-    this.nodes.set(node.id, node);
-  }
+    // トークン制限の設定
+    if (maxTokens !== undefined) {
+      modelConfig.maxTokens = maxTokens;
+    }
 
-  addEdge(edge: WorkflowEdge): void {
-    this.edges.push(edge);
+    logDebug('LangChain', 'ChatOpenAI初期化', {
+      model: modelName,
+      hasApiKey: !!apiKey,
+      temperature: modelConfig.temperature,
+      maxTokens: modelConfig.maxTokens,
+    });
+
+    this.model = new ChatOpenAI(modelConfig);
   }
 
   /**
-   * Execute workflow based on current game state
-   * Future: Will use LangGraph for complex decision flows
-   * なぜ早期リターン: アイテムがない場合はすぐに空配列を返す
+   * メッセージをLangChain形式に変換
    */
-  async execute(state: GameState): Promise<GameAction[]> {
-    // Placeholder implementation
-    // Future: LangGraph execution
+  private convertToLangChainMessages(messages: Message[]): BaseMessage[] {
+    return messages.map(msg => {
+      const content = msg.content;
+      
+      if (msg.role === "system") {
+        return new SystemMessage(content);
+      } else if (msg.role === "user") {
+        return new HumanMessage(content);
+      } else {
+        return new AIMessage(content);
+      }
+    });
+  }
 
-    // 早期リターン: アイテムがない場合
-    if (state.items.length === 0) {
-      return [];
+  /**
+   * LangChain経由でチャット応答を取得
+   */
+  async execute(messages: Message[]): Promise<string> {
+    try {
+      logDebug('LangChain', 'メッセージ送信開始', {
+        messageCount: messages.length,
+      });
+
+      const langchainMessages = this.convertToLangChainMessages(messages);
+
+      // ChatOpenAIを使用してレスポンスを取得
+      const response = await this.model.invoke(langchainMessages);
+
+      const content = typeof response.content === 'string' 
+        ? response.content 
+        : JSON.stringify(response.content);
+
+      logDebug('LangChain', 'レスポンス受信完了', {
+        responseLength: content.length,
+      });
+
+      return content;
+    } catch (error) {
+      logError('LangChain', error, {
+        attemptedAction: 'execute',
+        messageCount: messages.length,
+      });
+      throw error;
     }
-
-    // Simple AI logic for demonstration
-    const nearestItem = state.items[0];
-    const distanceX = nearestItem.x - state.player.position.x;
-    const distanceY = nearestItem.y - state.player.position.y;
-
-    // 水平方向の移動を優先
-    if (Math.abs(distanceX) > Math.abs(distanceY)) {
-      return [{
-        type: "move",
-        direction: distanceX > 0 ? "right" : "left",
-      }];
-    }
-
-    // 垂直方向の移動
-    return [{
-      type: "move",
-      direction: distanceY > 0 ? "down" : "up",
-    }];
   }
 }
 
 /**
- * チャット対話用のワークフロー（将来実装）
+ * LangGraphワークフローのインスタンスを作成
  */
-export interface ChatWorkflowNode {
-  id: string;
-  type: "analysis" | "decision" | "response";
-  execute: (messages: Message[]) => Promise<unknown>;
+export function createChatWorkflow(
+  apiKey: string,
+  model: string = "gpt-4o",
+  temperature?: number,
+  maxTokens?: number
+): LangGraphChatWorkflow {
+  return new LangGraphChatWorkflow(apiKey, model, temperature, maxTokens);
 }
-
-export class ChatWorkflow {
-  private nodes: Map<string, ChatWorkflowNode> = new Map();
-
-  addNode(node: ChatWorkflowNode): void {
-    this.nodes.set(node.id, node);
-  }
-
-  /**
-   * LangGraphを使用したチャットフローの実行（将来実装）
-   */
-  async execute(messages: Message[]): Promise<string> {
-    // プレースホルダー実装
-    // 将来: LangGraphによる複雑な対話フローを実装
-    return "LangGraph統合は将来実装予定です";
-  }
-}
-
-// Example workflow configuration
-export const chatWorkflow = new ChatWorkflow();
-export const gameDecisionWorkflow = new GameWorkflow();
-
-// Add decision nodes (placeholder)
-gameDecisionWorkflow.addNode({
-  id: "analyze_state",
-  type: "analysis",
-  execute: async (state: GameState) => {
-    return {
-      threats: state.enemies.length,
-      opportunities: state.items.length,
-      health: state.player.health,
-    };
-  },
-});
-
-gameDecisionWorkflow.addNode({
-  id: "decide_action",
-  type: "decision",
-  execute: async (_state: GameState) => {
-    // Future: AI decision making
-    return { action: "explore" };
-  },
-});
-
-
-
