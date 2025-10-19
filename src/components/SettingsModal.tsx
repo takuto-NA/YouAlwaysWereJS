@@ -233,22 +233,22 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
               onChange={(e) => setSettings({ ...settings, geminiModel: e.target.value })}
               className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-gray-500"
             >
-              <optgroup label="Gemini 2.5 (Latest)">
-                <option value="gemini-2.5-flash-latest">Gemini 2.5 Flash ⭐ (Latest)</option>
-                <option value="gemini-2.5-pro-latest">Gemini 2.5 Pro (Advanced Reasoning)</option>
-                <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (Ultra Fast)</option>
+              <optgroup label="Gemini 2.0 (Experimental)">
+                <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash ⭐ (Experimental)</option>
               </optgroup>
-              <optgroup label="Gemini 2.0">
-                <option value="gemini-2.0-flash-exp">Gemini 2.0 Flash (Experimental)</option>
-              </optgroup>
-              <optgroup label="Gemini 1.5">
+              <optgroup label="Gemini 1.5 Pro">
+                <option value="gemini-1.5-pro-latest">Gemini 1.5 Pro (Latest)</option>
                 <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+              </optgroup>
+              <optgroup label="Gemini 1.5 Flash">
+                <option value="gemini-1.5-flash-latest">Gemini 1.5 Flash (Latest)</option>
                 <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                <option value="gemini-1.5-flash-8b">Gemini 1.5 Flash-8B (Fast)</option>
+                <option value="gemini-1.5-flash-8b-latest">Gemini 1.5 Flash-8B (Latest)</option>
+                <option value="gemini-1.5-flash-8b">Gemini 1.5 Flash-8B</option>
               </optgroup>
             </select>
             <p className="text-xs text-gray-600">
-              2.5 Flash: Latest & balanced / 2.5 Pro: Best reasoning / 2.5 Flash-Lite: Ultra fast & cost-effective
+              2.0 Flash: Latest experimental / 1.5 Pro: Best quality / 1.5 Flash: Fast & efficient
             </p>
           </div>
             </>

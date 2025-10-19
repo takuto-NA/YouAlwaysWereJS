@@ -27,7 +27,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   openaiApiKey: '',
   openaiModel: 'gpt-4o',
   geminiApiKey: '',
-  geminiModel: 'gemini-2.5-flash-latest',
+  geminiModel: 'gemini-1.5-flash-latest',
   typewriterSpeed: DEFAULT_TYPEWRITER_SPEED_MS,
   mcpEndpoint: 'ws://localhost:8080',
   theme: 'dark',
