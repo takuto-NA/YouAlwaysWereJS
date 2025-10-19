@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>You Always Were JS</title>
+  </head>
+  <body>
+    <!--
+      アプリケーションのエントリーポイント（最初に読み込まれるHTML）
+
+      なぜ必要:
+      - ブラウザが最初に読み込むファイル
+      - Reactアプリをマウントする<div id="root">を提供
+      - src/main.tsxをインポートしてアプリを起動
+
+      動作の流れ:
+      1. ブラウザがこのindex.htmlを読み込む
+      2. <script src="/src/main.tsx">を実行
+      3. main.tsxがReactアプリを<div id="root">にマウント
+      4. 画面にアプリが表示される
+
+      ルート推奨: Viteの標準仕様（設定で変更可能だが、標準に従うべき）
+    -->
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

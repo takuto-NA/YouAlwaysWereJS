@@ -1,0 +1,31 @@
+{
+  // TypeScriptコンパイラ設定 - ブラウザ用（src/配下のコード）
+  // なぜ必要: TypeScriptをJavaScriptに変換し、型安全性を確保するため
+  // ルート必須: TypeScriptコンパイラ（tsc）がルートから自動検索する
+  "compilerOptions": {
+    "target": "ES2020",                      // 変換後のJavaScript形式（モダンブラウザ対応）
+    "useDefineForClassFields": true,         // クラスフィールドの標準仕様に準拠
+    "lib": ["ES2020", "DOM", "DOM.Iterable"], // 使用可能なJavaScript API（DOM操作含む）
+
+    "module": "ESNext",                      // モジュール形式（import/export使用）
+    "skipLibCheck": true,                    // 型定義ファイル（.d.ts）の型チェックをスキップ（ビルド高速化）
+
+    "moduleResolution": "bundler",           // Viteなどのバンドラー用モジュール解決
+    "allowImportingTsExtensions": true,      // .tsファイルを直接インポート可能にする
+    "resolveJsonModule": true,               // JSONファイルをインポート可能にする
+    "isolatedModules": true,                 // 各ファイルを独立モジュールとして扱う（Vite要求）
+    "noEmit": true,                          // .jsファイルを出力しない（Viteがビルドするため）
+
+    "jsx": "react-jsx",                      // ReactのJSX記法をサポート（React 17+の新形式）
+
+    // 型チェックの厳格さ
+    "strict": true,                          // すべての厳格な型チェックを有効化
+    "noUnusedLocals": false,                 // 未使用変数を許可（MVP開発中のため一時的に無効）
+    "noUnusedParameters": false,             // 未使用パラメータを許可（MVP開発中のため一時的に無効）
+    "noFallthroughCasesInSwitch": true       // switch文のbreak忘れを検出
+  },
+
+  "include": ["src"],                        // 型チェック対象（src/配下のみ）
+  "references": [{ "path": "./tsconfig.node.json" }]  // ビルドツール用設定を参照
+}
+

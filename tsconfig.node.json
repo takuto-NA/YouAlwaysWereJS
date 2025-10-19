@@ -1,0 +1,14 @@
+{
+  // TypeScriptコンパイラ設定 - Node.js/ビルドツール用（vite.config.ts用）
+  // なぜ必要: Vite設定ファイルをTypeScriptで書くため
+  // なぜ分離: ブラウザ（tsconfig.json）とNode.js環境では設定が異なる
+  "compilerOptions": {
+    "composite": true,                       // プロジェクト参照を有効化（tsconfig.jsonから参照される）
+    "skipLibCheck": true,                    // 型定義ファイルの型チェックをスキップ（ビルド高速化）
+    "module": "ESNext",                      // モジュール形式（import/export使用）
+    "moduleResolution": "bundler",           // Vite用のモジュール解決
+    "allowSyntheticDefaultImports": true     // default exportがないモジュールでもimport可能にする
+  },
+  "include": ["vite.config.ts"]              // この設定はvite.config.tsのみに適用
+}
+

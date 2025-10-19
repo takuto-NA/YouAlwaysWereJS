@@ -1,0 +1,32 @@
+{
+  "productName": "YouAlwaysWereJS",
+  "version": "0.1.0",
+  "identifier": "com.youalwayswerejs.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "You Always Were JS",
+        "width": 1280,
+        "height": 720,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": false,
+    "targets": "all"
+  }
+}
+
+
+
