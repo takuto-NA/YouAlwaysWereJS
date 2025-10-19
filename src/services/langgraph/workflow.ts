@@ -94,17 +94,42 @@ export class LangGraphChatWorkflow {
    * メッセージをLangChain形式に変換
    */
   private convertToLangChainMessages(messages: Message[]): BaseMessage[] {
-    return messages.map(msg => {
-      const content = msg.content;
+    if (this.provider === 'gemini') {
+      // Geminiは最初のシステムメッセージのみを許可
+      // それ以外のシステムメッセージはユーザーメッセージに変換
+      let hasSystemMessage = false;
       
-      if (msg.role === "system") {
-        return new SystemMessage(content);
-      } else if (msg.role === "user") {
-        return new HumanMessage(content);
-      } else {
-        return new AIMessage(content);
-      }
-    });
+      return messages.map(msg => {
+        const content = msg.content;
+        
+        if (msg.role === "system") {
+          if (!hasSystemMessage) {
+            hasSystemMessage = true;
+            return new SystemMessage(content);
+          } else {
+            // 2つ目以降のシステムメッセージはユーザーメッセージとして扱う
+            return new HumanMessage(`[System]: ${content}`);
+          }
+        } else if (msg.role === "user") {
+          return new HumanMessage(content);
+        } else {
+          return new AIMessage(content);
+        }
+      });
+    } else {
+      // OpenAIは複数のシステムメッセージを許可
+      return messages.map(msg => {
+        const content = msg.content;
+        
+        if (msg.role === "system") {
+          return new SystemMessage(content);
+        } else if (msg.role === "user") {
+          return new HumanMessage(content);
+        } else {
+          return new AIMessage(content);
+        }
+      });
+    }
   }
 
   /**
