@@ -3,8 +3,11 @@
  * セキュアな方法でAPIキーなどを保存
  */
 import { DEFAULT_TYPEWRITER_SPEED_MS } from "../constants/typewriter";
+import { PromptSettings } from "../types/prompt";
+import { DEFAULT_PROMPT_SETTINGS } from "../constants/prompts";
 
 const STORAGE_KEY = "chat_app_settings";
+const PROMPT_STORAGE_KEY = "chat_app_prompts";
 
 export type AIProvider = "openai" | "gemini";
 
@@ -119,4 +122,40 @@ export function importSettings(json: string): void {
     console.error("設定のインポートに失敗しました:", error);
     throw new Error("無効な設定ファイルです");
   }
+}
+
+/**
+ * プロンプト設定をローカルストレージに保存
+ */
+export function savePromptSettings(settings: Partial<PromptSettings>): void {
+  try {
+    const currentSettings = loadPromptSettings();
+    const newSettings = { ...currentSettings, ...settings };
+    localStorage.setItem(PROMPT_STORAGE_KEY, JSON.stringify(newSettings));
+  } catch (error) {
+    console.error("プロンプト設定の保存に失敗しました:", error);
+  }
+}
+
+/**
+ * プロンプト設定をローカルストレージから読み込み
+ */
+export function loadPromptSettings(): PromptSettings {
+  try {
+    const stored = localStorage.getItem(PROMPT_STORAGE_KEY);
+    if (!stored) {
+      return DEFAULT_PROMPT_SETTINGS;
+    }
+    return { ...DEFAULT_PROMPT_SETTINGS, ...JSON.parse(stored) };
+  } catch (error) {
+    console.error("プロンプト設定の読み込みに失敗しました:", error);
+    return DEFAULT_PROMPT_SETTINGS;
+  }
+}
+
+/**
+ * プロンプト設定をリセット
+ */
+export function resetPromptSettings(): void {
+  localStorage.removeItem(PROMPT_STORAGE_KEY);
 }

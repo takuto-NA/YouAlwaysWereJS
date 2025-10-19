@@ -3,14 +3,17 @@
  * LangGraphとOpenAI APIを使用してMCP経由で対話
  */
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Cog6ToothIcon } from "@heroicons/react/24/outline";
+import { Cog6ToothIcon, SparklesIcon } from "@heroicons/react/24/outline";
 import ChatMessage from "./components/ChatMessage";
 import ChatInput from "./components/ChatInput";
 import SettingsModal from "./components/SettingsModal";
+import PromptEditorModal from "./components/PromptEditorModal";
 import { Message, ChatState } from "./types/chat";
+import { PromptSettings } from "./types/prompt";
 // import { openAIService } from "./services/ai"; // 将来使用するため保持
 import { logError, logDebug } from "./utils/errorHandler";
-import { loadSettings, hasApiKey, AppSettings } from "./utils/storage";
+import { loadSettings, hasApiKey, AppSettings, loadPromptSettings } from "./utils/storage";
+import { buildSystemPrompt } from "./utils/promptBuilder";
 import { ANIMATION_DELAYS } from "./constants/animations";
 
 function App() {
@@ -19,7 +22,9 @@ function App() {
     isProcessing: false,
   });
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isPromptEditorOpen, setIsPromptEditorOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(loadSettings());
+  const [promptSettings, setPromptSettings] = useState<PromptSettings>(loadPromptSettings());
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 初期化と設定チェック
@@ -60,6 +65,23 @@ function App() {
       id: `system-${Date.now()}`,
       role: "system",
       content: "SAVED: 設定を保存しました。チャットを開始できます。",
+      timestamp: Date.now(),
+      isTyping: false,
+    };
+
+    setChatState((prev) => ({
+      ...prev,
+      messages: [...prev.messages, successMessage],
+    }));
+  };
+
+  const handlePromptSettingsSave = (newPromptSettings: PromptSettings) => {
+    setPromptSettings(newPromptSettings);
+
+    const successMessage: Message = {
+      id: `system-${Date.now()}`,
+      role: "system",
+      content: "SAVED: プロンプト設定を保存しました。",
       timestamp: Date.now(),
       isTyping: false,
     };
@@ -141,10 +163,24 @@ function App() {
         settings.maxTokens
       );
 
-      const response = await customService.chat(
-        [...chatState.messages, userMessage],
-        settings.aiProvider
+      // システムプロンプトを構築
+      const systemPromptText = buildSystemPrompt(
+        promptSettings,
+        chatState.messages.length + 1
       );
+
+      // システムプロンプトをメッセージの最初に追加
+      const systemMessage: Message = {
+        id: "system-prompt",
+        role: "system",
+        content: systemPromptText,
+        timestamp: Date.now(),
+      };
+
+      // システムメッセージ + 会話履歴 + ユーザーメッセージ
+      const messagesWithPrompt = [systemMessage, ...chatState.messages, userMessage];
+
+      const response = await customService.chat(messagesWithPrompt, settings.aiProvider);
 
       // AIレスポンスを追加（タイプライター効果を有効化）
       const assistantMessage: Message = {
@@ -210,15 +246,29 @@ function App() {
         onSave={handleSettingsSave}
       />
 
+      <PromptEditorModal
+        isOpen={isPromptEditorOpen}
+        onClose={() => setIsPromptEditorOpen(false)}
+        onSave={handlePromptSettingsSave}
+      />
+
       {/* ヘッダー - シンプルなSF風 */}
       <div className="bg-black border-b border-gray-800 px-6 py-3 flex items-center justify-between flex-shrink-0 animate-fadeIn">
         <div className="text-white text-lg font-light tracking-widest">AI INTERFACE</div>
-        <div className="flex items-center gap-6">
+        <div className="flex items-center gap-4">
+          <button
+            onClick={() => setIsPromptEditorOpen(true)}
+            className="text-gray-600 hover:text-white transition-all duration-300 hover:scale-110"
+            aria-label="プロンプトエディタを開く"
+            title="Prompt Editor"
+          >
+            <SparklesIcon className="w-6 h-6" />
+          </button>
           <button
             onClick={() => setIsSettingsOpen(true)}
             className="text-gray-600 hover:text-white transition-all duration-300 hover:scale-110"
             aria-label="設定を開く"
-            title="設定"
+            title="Settings"
           >
             <Cog6ToothIcon className="w-6 h-6" />
           </button>
