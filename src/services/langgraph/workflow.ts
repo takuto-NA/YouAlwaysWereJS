@@ -27,7 +27,8 @@ export class LangGraphChatWorkflow {
     apiKey: string,
     modelName: string = "gpt-4o",
     temperature?: number,
-    maxTokens?: number
+    maxTokens?: number,
+    customEndpoint?: string
   ) {
     this.provider = provider;
 
@@ -40,6 +41,13 @@ export class LangGraphChatWorkflow {
         apiKey: apiKey,
         model: modelName,
       };
+
+      // カスタムエンドポイントの設定（LM Studio等のローカルサーバー対応）
+      if (customEndpoint) {
+        modelConfig.configuration = {
+          baseURL: customEndpoint,
+        };
+      }
 
       // GPT-4以前のモデルのみtemperatureをカスタマイズ可能
       if (!isO1 && !isGpt5 && temperature !== undefined) {
@@ -54,6 +62,7 @@ export class LangGraphChatWorkflow {
       logDebug("LangChain", "ChatOpenAI初期化", {
         model: modelName,
         hasApiKey: !!apiKey,
+        customEndpoint: customEndpoint || "default (api.openai.com)",
         temperature: modelConfig.temperature,
         maxTokens: modelConfig.maxTokens,
       });
@@ -205,7 +214,8 @@ export function createChatWorkflow(
   apiKey: string,
   model: string = "gpt-4o",
   temperature?: number,
-  maxTokens?: number
+  maxTokens?: number,
+  customEndpoint?: string
 ): LangGraphChatWorkflow {
-  return new LangGraphChatWorkflow(provider, apiKey, model, temperature, maxTokens);
+  return new LangGraphChatWorkflow(provider, apiKey, model, temperature, maxTokens, customEndpoint);
 }

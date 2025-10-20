@@ -17,6 +17,7 @@ export interface AppSettings {
   aiProvider: AIProvider;
   openaiApiKey: string;
   openaiModel: string;
+  customOpenAIEndpoint?: string; // LM Studio等のカスタムエンドポイント（オプション）
   geminiApiKey: string;
   geminiModel: string;
   typewriterSpeed: number;

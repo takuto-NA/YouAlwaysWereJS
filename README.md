@@ -230,6 +230,26 @@ AIの応答メッセージは一文字ずつ表示されます。
 
 詳細は [SETTINGS_GUIDE.md](SETTINGS_GUIDE.md) を参照してください。
 
+### LM Studio（ローカルAI）対応
+
+LM StudioのOpenAI互換モードを使用して、完全にローカルで大規模言語モデルを実行できます。
+
+**特徴:**
+- 🏠 完全ローカル実行（インターネット不要）
+- 🔒 プライバシー保護（データ送信なし）
+- 💰 コスト削減（API料金不要）
+- 🎯 カスタムモデル対応
+
+設定画面の「Custom Endpoint」に以下を入力して使用できます：
+- **直接接続**: `http://localhost:1234/v1`（LM StudioでCORS有効化が必要）
+- **プロキシ経由**: `http://localhost:1420/api/lmstudio/v1`（CORSエラー回避、推奨）
+
+**⚠️ 重要**: エンドポイントURLには必ず `/v1` を含めてください
+
+**📱 スマホからアクセス**: PCで `python dev.py` を起動後、スマホのブラウザで `http://192.168.0.2:1420` にアクセス可能（同一Wi-Fi上）
+
+詳細は [LM_STUDIO_GUIDE.md](LM_STUDIO_GUIDE.md) を参照してください。
+
 ### ログの例
 
 ```

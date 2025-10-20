@@ -28,8 +28,8 @@ export default defineConfig({
   clearScreen: false,
 
   server: {
-    // ホスト設定: Tauri使用時は環境変数から、通常はlocalhostのみ
-    host: host || false,
+    // ホスト設定: 0.0.0.0で外部デバイス（スマホ等）からのアクセスを許可
+    host: host || '0.0.0.0',
 
     // ポート番号: 1420番固定（Tauri推奨ポート）
     port: 1420,
@@ -44,6 +44,24 @@ export default defineConfig({
           port: 1430, // HMR専用ポート（開発サーバーとは別）
         }
       : undefined, // Tauri未使用時はデフォルト設定
+
+    // プロキシ設定: LM StudioなどのローカルサーバーへのCORS回避
+    // なぜ必要: ブラウザのCORS制限を回避してローカルAIサーバーにアクセス
+    proxy: {
+      '/api/lmstudio': {
+        target: 'http://127.0.0.1:1234',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/lmstudio/, ''),
+        configure: (proxy) => {
+          proxy.on('error', (err) => {
+            console.log('Proxy error:', err);
+          });
+          proxy.on('proxyReq', (proxyReq, req) => {
+            console.log('Proxying request:', req.method, req.url);
+          });
+        }
+      }
+    }
   },
 });
 

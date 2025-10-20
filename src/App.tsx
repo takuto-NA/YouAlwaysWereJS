@@ -184,6 +184,11 @@ function App() {
         settings.maxTokens
       );
 
+      // カスタムエンドポイントが設定されている場合は適用（LM Studio対応）
+      if (settings.aiProvider === "openai" && settings.customOpenAIEndpoint) {
+        customService.setCustomEndpoint(settings.customOpenAIEndpoint);
+      }
+
       // システムプロンプトを構築
       const systemPromptText = buildSystemPrompt(
         promptSettings,

@@ -320,7 +320,7 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                   htmlFor="openai-model-select"
                   className="text-white font-light uppercase tracking-wider text-sm block"
                 >
-                  OpenAI Model Selection
+                  OpenAI Model Selection (Preset)
                 </label>
                 <select
                   id="openai-model-select"
@@ -349,7 +349,52 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                   </optgroup>
                 </select>
                 <p className="text-xs text-gray-600">
-                  GPT-5: Standard / GPT-5-mini: Fast / GPT-5-pro: Maximum Performance
+                  プリセットから選択、または下のフィールドでカスタムモデル名を入力
+                </p>
+              </div>
+
+              {/* カスタムモデル名入力（LM Studio等） */}
+              <div className="space-y-3">
+                <label
+                  htmlFor="custom-model-name"
+                  className="text-white font-light uppercase tracking-wider text-sm block"
+                >
+                  Or Enter Custom Model Name
+                </label>
+                <input
+                  id="custom-model-name"
+                  type="text"
+                  value={settings.openaiModel}
+                  onChange={(e) => setSettings({ ...settings, openaiModel: e.target.value })}
+                  placeholder="例: llama-3.2-3b-instruct, mistral-7b-instruct"
+                  className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200 font-mono"
+                />
+                <p className="text-xs text-gray-600">
+                  LM Studioやカスタムエンドポイントで使用するモデル名を直接入力できます。
+                </p>
+              </div>
+
+              {/* カスタムエンドポイント（LM Studio等） */}
+              <div className="space-y-3">
+                <label
+                  htmlFor="custom-endpoint"
+                  className="text-white font-light uppercase tracking-wider text-sm block"
+                >
+                  Custom Endpoint (Optional)
+                </label>
+                <input
+                  id="custom-endpoint"
+                  type="text"
+                  value={settings.customOpenAIEndpoint || ""}
+                  onChange={(e) => setSettings({ ...settings, customOpenAIEndpoint: e.target.value })}
+                  placeholder="http://localhost:1234/v1 または http://localhost:1420/api/lmstudio/v1"
+                  className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
+                />
+                <p className="text-xs text-gray-600">
+                  LM Studio等のローカルサーバーを使用する場合に指定。<strong className="text-gray-400">必ず /v1 を含めてください</strong>。空欄の場合はOpenAI公式APIを使用します。
+                </p>
+                <p className="text-xs text-yellow-600 mt-1">
+                  💡 CORSエラーが出る場合: <code className="bg-gray-800 px-1">http://localhost:1420/api/lmstudio/v1</code> を使用（プロキシ経由でCORS回避）
                 </p>
               </div>
             </>
@@ -406,7 +451,7 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                   htmlFor="gemini-model-select"
                   className="text-white font-light uppercase tracking-wider text-sm block"
                 >
-                  Gemini Model Selection
+                  Gemini Model Selection (Preset)
                 </label>
                 <select
                   id="gemini-model-select"
@@ -431,8 +476,28 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                   </optgroup>
                 </select>
                 <p className="text-xs text-gray-600">
-                  2.5 Flash: Latest & balanced (無料枠: RPM 10) / 2.5 Pro: Premium quality (無料枠:
-                  RPM 2) / 1.5 Flash: Fast (無料枠: RPM 15)
+                  プリセットから選択、または下のフィールドでカスタムモデル名を入力
+                </p>
+              </div>
+
+              {/* カスタムモデル名入力（Gemini） */}
+              <div className="space-y-3">
+                <label
+                  htmlFor="custom-gemini-model-name"
+                  className="text-white font-light uppercase tracking-wider text-sm block"
+                >
+                  Or Enter Custom Model Name
+                </label>
+                <input
+                  id="custom-gemini-model-name"
+                  type="text"
+                  value={settings.geminiModel}
+                  onChange={(e) => setSettings({ ...settings, geminiModel: e.target.value })}
+                  placeholder="例: gemini-2.5-flash-latest, gemini-exp-1206"
+                  className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200 font-mono"
+                />
+                <p className="text-xs text-gray-600">
+                  カスタムモデル名やExperimentalモデルを直接入力できます。
                 </p>
               </div>
             </>

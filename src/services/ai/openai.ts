@@ -31,6 +31,7 @@ export class OpenAIService {
   private model: string;
   private temperature: number = 0.7;
   private maxTokens: number = 1000;
+  private customEndpoint?: string;
   private workflow: LangGraphChatWorkflow | null = null;
 
   constructor(apiKey?: string, model: string = DEFAULT_MODEL) {
@@ -72,11 +73,26 @@ export class OpenAIService {
   }
 
   /**
+   * カスタムエンドポイントを設定（LM Studio等のローカルサーバー用）
+   */
+  setCustomEndpoint(customEndpoint?: string): void {
+    this.customEndpoint = customEndpoint;
+    this.workflow = null; // エンドポイント変更時にワークフローをリセット
+  }
+
+  /**
    * LangGraphワークフローを初期化
    */
   private initializeWorkflow(provider: "openai" | "gemini", apiKey: string, model: string): void {
     if (!this.workflow) {
-      this.workflow = createChatWorkflow(provider, apiKey, model, this.temperature, this.maxTokens);
+      this.workflow = createChatWorkflow(
+        provider,
+        apiKey,
+        model,
+        this.temperature,
+        this.maxTokens,
+        this.customEndpoint
+      );
     }
   }
 
