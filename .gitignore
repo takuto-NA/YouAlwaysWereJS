@@ -41,4 +41,5 @@ config/secrets.json
 
 # AI assistants
 .serena
+.serena/
 .claude/
