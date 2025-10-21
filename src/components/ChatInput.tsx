@@ -26,8 +26,8 @@ function ChatInput({ onSend, disabled = false }: ChatInputProps) {
   };
 
   return (
-    <div className="border-t border-gray-800 bg-black px-8 py-4">
-      <div className="flex gap-3 max-w-5xl">
+    <div className="chat-input-bar">
+      <div className="chat-input-bar__inner">
         <input
           type="text"
           value={input}
@@ -35,19 +35,17 @@ function ChatInput({ onSend, disabled = false }: ChatInputProps) {
           onKeyDown={handleKeyDown}
           disabled={disabled}
           placeholder={disabled ? "処理中..." : "メッセージを入力"}
-          className="flex-1 bg-black border border-gray-800 text-white px-4 py-3 text-base focus:outline-none focus:border-gray-600 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+          className="chat-input-bar__field"
         />
         <button
           onClick={handleSend}
           disabled={disabled || !input.trim()}
-          className="px-8 py-3 bg-white text-black text-sm uppercase tracking-wider hover:bg-gray-200 transition-all disabled:opacity-30 disabled:cursor-not-allowed disabled:hover:bg-white font-medium"
+          className="chat-input-bar__send"
         >
           送信
         </button>
       </div>
-      <div className="mt-2 text-xs text-gray-700 uppercase tracking-wider max-w-5xl">
-        Enter: 送信
-      </div>
+      <div className="chat-input-bar__hint">Enter: 送信</div>
     </div>
   );
 }
