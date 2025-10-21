@@ -387,15 +387,52 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                   type="text"
                   value={settings.customOpenAIEndpoint || ""}
                   onChange={(e) => setSettings({ ...settings, customOpenAIEndpoint: e.target.value })}
-                  placeholder="http://localhost:1234/v1 または http://localhost:1420/api/lmstudio/v1"
-                  className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
+                  placeholder="例: http://192.168.1.100:1234/v1"
+                  className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200 font-mono"
                 />
-                <p className="text-xs text-gray-600">
-                  LM Studio等のローカルサーバーを使用する場合に指定。<strong className="text-gray-400">必ず /v1 を含めてください</strong>。空欄の場合はOpenAI公式APIを使用します。
-                </p>
-                <p className="text-xs text-yellow-600 mt-1">
-                  💡 CORSエラーが出る場合: <code className="bg-gray-800 px-1">http://localhost:1420/api/lmstudio/v1</code> を使用（プロキシ経由でCORS回避）
-                </p>
+                
+                {/* 詳細な説明パネル */}
+                <div className="bg-gray-900 border border-gray-800 p-4 space-y-3 text-xs">
+                  <p className="text-gray-400">
+                    LM Studio等のローカルサーバーのエンドポイントを指定できます。空欄の場合はOpenAI公式APIを使用します。
+                  </p>
+                  
+                  <div className="space-y-2">
+                    <p className="text-white font-semibold">📍 接続方法:</p>
+                    
+                    <div className="pl-3 space-y-2">
+                      <div>
+                        <p className="text-green-400 font-semibold">✅ LM StudioでCORS有効にしている場合:</p>
+                        <code className="block bg-black px-2 py-1 text-green-400 mt-1">
+                          http://localhost:1234/v1
+                        </code>
+                        <code className="block bg-black px-2 py-1 text-green-400 mt-1">
+                          http://192.168.x.x:1234/v1
+                        </code>
+                        <p className="text-gray-500 mt-1">
+                          ※ LM Studioの設定で「Enable CORS」をONにしてください
+                        </p>
+                      </div>
+                      
+                      <div className="pt-2 border-t border-gray-800">
+                        <p className="text-yellow-400 font-semibold">⚠️ CORS無効の場合（プロキシ経由）:</p>
+                        <code className="block bg-black px-2 py-1 text-yellow-400 mt-1">
+                          http://localhost:1420/api/lmstudio/v1
+                        </code>
+                        <p className="text-gray-500 mt-1">
+                          ※ このアプリのプロキシサーバー経由でCORSエラーを回避します
+                        </p>
+                        <p className="text-gray-500">
+                          ※ LM Studioは localhost:1234 で起動している必要があります
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <p className="text-gray-500 pt-2 border-t border-gray-800">
+                    <strong className="text-gray-400">重要:</strong> エンドポイントは必ず <code className="bg-gray-800 px-1">/v1</code> で終わる必要があります
+                  </p>
+                </div>
               </div>
             </>
           )}

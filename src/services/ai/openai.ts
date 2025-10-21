@@ -100,21 +100,29 @@ export class OpenAIService {
    * LangGraphを使用してAI APIを呼び出す（マルチプロバイダー対応）
    */
   async chat(messages: Message[], provider: "openai" | "gemini" = "openai"): Promise<string> {
+    const providerName = provider === "openai" ? "OpenAI" : "Gemini";
+    
+    // APIキーの検証
     if (!this.apiKey) {
-      const providerName = provider === "openai" ? "OpenAI" : "Gemini";
-      throw new Error(`${providerName} APIキーが設定されていません。設定から入力してください。`);
+      throw new Error(
+        `${providerName} APIキーが設定されていません。\n\n` +
+        `💡 設定画面（歯車アイコン）からAPIキーを入力してください。`
+      );
+    }
+
+    // メッセージが空でないことを確認
+    if (!messages || messages.length === 0) {
+      throw new Error("送信するメッセージがありません。");
     }
 
     try {
-      const providerName = provider === "openai" ? "OpenAI" : "Gemini";
-
       logDebug("AI Service", `LangGraph経由で${providerName}にリクエスト送信`, {
         provider: provider,
         messageCount: messages.length,
         model: this.model,
       });
 
-      // MCP経由でコンテキストを送信
+      // MCP経由でコンテキストを送信（オプション機能）
       try {
         await mcpClient.connect();
         await mcpClient.request("context_update", {
@@ -123,14 +131,34 @@ export class OpenAIService {
         });
       } catch (mcpError) {
         // MCPエラーは警告として記録し、処理は続行
-        logDebug("AI Service", "MCP接続スキップ（オプション機能）", { mcpError });
+        const mcpErrorMessage = mcpError instanceof Error ? mcpError.message : String(mcpError);
+        logDebug("AI Service", "MCP接続スキップ（オプション機能）", { 
+          error: mcpErrorMessage 
+        });
       }
 
       // LangGraphワークフローを初期化
       this.initializeWorkflow(provider, this.apiKey, this.model);
 
+      if (!this.workflow) {
+        throw new Error("ワークフローの初期化に失敗しました。");
+      }
+
       // LangGraphワークフローを実行
-      const response = await this.workflow!.execute(messages);
+      const response = await this.workflow.execute(messages);
+
+      // レスポンスの妥当性を検証
+      if (!response || typeof response !== "string") {
+        throw new Error(
+          `${providerName}からの応答が不正です。サーバーの状態を確認してください。`
+        );
+      }
+
+      if (response.length === 0) {
+        throw new Error(
+          `${providerName}から空の応答が返されました。プロンプトを変更してみてください。`
+        );
+      }
 
       logDebug("AI Service", `LangGraphから応答を受信 (${providerName})`, {
         provider: provider,
@@ -139,11 +167,25 @@ export class OpenAIService {
 
       return response;
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      
       logError("AI Service", error, {
         provider: provider,
         attemptedAction: "chat",
         messageCount: messages.length,
+        model: this.model,
       });
+      
+      // エラーメッセージをより詳細に
+      if (errorMessage.includes("fetch") || errorMessage.includes("network")) {
+        throw new Error(
+          `ネットワークエラー: ${providerName}への接続に失敗しました。\n` +
+          `インターネット接続を確認してください。\n\n` +
+          `詳細: ${errorMessage}`
+        );
+      }
+      
+      // 元のエラーをそのまま投げる（すでに詳細なメッセージが含まれている場合）
       throw error;
     }
   }

@@ -156,7 +156,68 @@ export class LangGraphChatWorkflow {
       const langchainMessages = this.convertToLangChainMessages(messages);
 
       // プロバイダーに応じたモデルでレスポンスを取得
-      const response = await this.model.invoke(langchainMessages);
+      let response;
+      try {
+        response = await this.model.invoke(langchainMessages);
+      } catch (invokeError: unknown) {
+        // API呼び出しエラーの詳細な処理
+        let errorMessage = invokeError instanceof Error ? invokeError.message : String(invokeError);
+        let errorDetails = "";
+        
+        // エラーオブジェクトから追加情報を抽出
+        if (invokeError && typeof invokeError === "object") {
+          const errObj = invokeError as Record<string, unknown>;
+          
+          // fetchエラーやネットワークエラーの場合
+          if (errObj.cause) {
+            errorDetails += `\n原因: ${JSON.stringify(errObj.cause)}`;
+          }
+          
+          // HTTPステータスコードがある場合
+          if (errObj.status) {
+            errorDetails += `\nHTTPステータス: ${errObj.status}`;
+          }
+          
+          // レスポンスボディがある場合
+          if (errObj.response) {
+            errorDetails += `\nレスポンス: ${JSON.stringify(errObj.response)}`;
+          }
+        }
+        
+        // カスタムエンドポイント使用時のエラーメッセージを改善
+        if (this.provider === "openai" && this.model instanceof ChatOpenAI) {
+          const config = (this.model as ChatOpenAI).lc_kwargs as { configuration?: { baseURL?: string } };
+          const baseURL = config?.configuration?.baseURL;
+          
+          if (baseURL && baseURL !== "https://api.openai.com/v1") {
+            // "Cannot read properties of undefined" エラーの場合、より詳細な説明を追加
+            if (errorMessage.includes("Cannot read properties of undefined")) {
+              errorMessage = "サーバーからの応答が不正な形式です。LM Studioが正しく起動していない可能性があります。";
+            }
+            
+            throw new Error(
+              `カスタムエンドポイント (${baseURL}) への接続に失敗しました。\n` +
+              `エラー: ${errorMessage}${errorDetails}\n\n` +
+              `確認事項:\n` +
+              `1. LM Studioが起動しているか\n` +
+              `2. モデルがロードされているか\n` +
+              `3. エンドポイントURL (${baseURL}) が正しいか\n` +
+              `4. ネットワーク接続が正常か (${baseURL.includes('192.168') ? 'ローカルネットワーク' : ''})`
+            );
+          }
+        }
+        
+        throw new Error(`${providerName} API呼び出しエラー: ${errorMessage}${errorDetails}`);
+      }
+
+      // レスポンスの検証
+      if (!response) {
+        throw new Error(`${providerName} APIからのレスポンスが空です。サーバーが正しく起動しているか確認してください。`);
+      }
+
+      if (!response.content) {
+        throw new Error(`${providerName} APIのレスポンスにcontentが含まれていません。レスポンス: ${JSON.stringify(response)}`);
+      }
 
       // レスポンスの型を確認してログ出力
       logDebug("LangChain", `レスポンス型確認 (${providerName})`, {

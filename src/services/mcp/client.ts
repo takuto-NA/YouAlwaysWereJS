@@ -33,23 +33,26 @@ export class MCPClient {
       });
       this.connected = true;
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       logError("MCP Client", error, {
         attemptedAction: "connect",
         endpoint: this.endpoint,
       });
-      throw error;
+      
+      // 接続エラーに関する詳細情報を追加
+      throw new Error(
+        `MCPサーバー (${this.endpoint}) への接続に失敗しました: ${errorMessage}\n` +
+        `サーバーが起動しているか確認してください。`
+      );
     }
   }
 
   async send(message: MCPMessage): Promise<void> {
     try {
       if (!this.connected) {
-        const error = new Error("MCP Client not connected");
-        logError("MCP Client", error, {
-          attemptedAction: "send",
-          messageType: message.type,
-        });
-        throw error;
+        throw new Error(
+          "MCPクライアントが接続されていません。先に connect() を呼び出してください。"
+        );
       }
 
       // 将来: MCPサーバーにメッセージを送信
@@ -58,11 +61,12 @@ export class MCPClient {
         timestamp: message.timestamp,
       });
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       logError("MCP Client", error, {
         attemptedAction: "send",
         messageType: message.type,
       });
-      throw error;
+      throw new Error(`メッセージ送信エラー (タイプ: ${message.type}): ${errorMessage}`);
     }
   }
 
@@ -80,11 +84,12 @@ export class MCPClient {
       // プレースホルダーレスポンス
       return {} as T;
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       logError("MCP Client", error, {
         attemptedAction: "request",
         requestType: type,
       });
-      throw error;
+      throw new Error(`MCPリクエストエラー (タイプ: ${type}): ${errorMessage}`);
     }
   }
 

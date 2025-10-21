@@ -140,8 +140,17 @@ function DisplaySettingsModal({ isOpen, onClose, onSave }: DisplaySettingsModalP
         onClose();
       }, SAVE_MESSAGE_TIMEOUT_MS);
     } catch (error) {
-      setSaveMessage("ERROR: Failed to save");
-      logDebug("DisplaySettings", "表示設定の保存に失敗しました", { error });
+      const errorMessage = error instanceof Error ? error.message : "設定の保存に失敗しました";
+      setSaveMessage(`ERROR: ${errorMessage}`);
+      logDebug("DisplaySettings", "表示設定の保存に失敗しました", { 
+        error: errorMessage,
+        settings 
+      });
+      
+      // エラーメッセージを5秒後に消去
+      setTimeout(() => {
+        setSaveMessage("");
+      }, 5000);
     } finally {
       setIsSaving(false);
     }

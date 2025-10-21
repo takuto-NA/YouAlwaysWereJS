@@ -51,8 +51,17 @@ export function saveSettings(settings: Partial<AppSettings>): void {
     const newSettings = { ...currentSettings, ...settings };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(newSettings));
   } catch (error) {
-    console.error("設定の保存に失敗しました:", error);
-    throw new Error("設定の保存に失敗しました");
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("設定の保存に失敗しました:", errorMessage);
+    
+    // QuotaExceededError の場合は具体的なメッセージを提供
+    if (error instanceof DOMException && error.name === "QuotaExceededError") {
+      throw new Error(
+        "ストレージの容量制限に達しました。ブラウザのキャッシュをクリアしてください。"
+      );
+    }
+    
+    throw new Error(`設定の保存に失敗しました: ${errorMessage}`);
   }
 }
 
@@ -66,9 +75,28 @@ export function loadSettings(): AppSettings {
       return DEFAULT_SETTINGS;
     }
     const parsed = JSON.parse(stored);
+    
+    // 保存されたデータの妥当性を検証
+    if (typeof parsed !== "object" || parsed === null) {
+      console.warn("無効な設定データが検出されました。デフォルト設定を使用します。");
+      return DEFAULT_SETTINGS;
+    }
+    
     return { ...DEFAULT_SETTINGS, ...parsed };
   } catch (error) {
-    console.error("設定の読み込みに失敗しました:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("設定の読み込みに失敗しました:", errorMessage);
+    
+    // JSON解析エラーの場合は設定をリセット
+    if (error instanceof SyntaxError) {
+      console.warn("設定データが破損しています。デフォルト設定を使用します。");
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch {
+        // 無視
+      }
+    }
+    
     return DEFAULT_SETTINGS;
   }
 }
@@ -80,8 +108,9 @@ export function resetSettings(): void {
   try {
     localStorage.removeItem(STORAGE_KEY);
   } catch (error) {
-    console.error("設定のリセットに失敗しました:", error);
-    throw new Error("設定のリセットに失敗しました");
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("設定のリセットに失敗しました:", errorMessage);
+    throw new Error(`設定のリセットに失敗しました: ${errorMessage}`);
   }
 }
 
@@ -120,10 +149,30 @@ export function exportSettings(): string {
 export function importSettings(json: string): void {
   try {
     const settings = JSON.parse(json);
+    
+    // インポートされた設定の妥当性を検証
+    if (typeof settings !== "object" || settings === null) {
+      throw new Error("設定データが正しい形式ではありません");
+    }
+    
+    // 必須フィールドの存在を確認
+    const requiredFields: (keyof AppSettings)[] = ["aiProvider", "openaiModel"];
+    for (const field of requiredFields) {
+      if (!(field in settings)) {
+        throw new Error(`必須フィールド "${field}" が見つかりません`);
+      }
+    }
+    
     saveSettings(settings);
   } catch (error) {
-    console.error("設定のインポートに失敗しました:", error);
-    throw new Error("無効な設定ファイルです");
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("設定のインポートに失敗しました:", errorMessage);
+    
+    if (error instanceof SyntaxError) {
+      throw new Error("設定ファイルのJSON形式が無効です");
+    }
+    
+    throw new Error(`設定のインポートに失敗しました: ${errorMessage}`);
   }
 }
 
@@ -136,7 +185,16 @@ export function savePromptSettings(settings: Partial<PromptSettings>): void {
     const newSettings = { ...currentSettings, ...settings };
     localStorage.setItem(PROMPT_STORAGE_KEY, JSON.stringify(newSettings));
   } catch (error) {
-    console.error("プロンプト設定の保存に失敗しました:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("プロンプト設定の保存に失敗しました:", errorMessage);
+    
+    if (error instanceof DOMException && error.name === "QuotaExceededError") {
+      throw new Error(
+        "ストレージの容量制限に達しました。プロンプトデータを削減するか、ブラウザのキャッシュをクリアしてください。"
+      );
+    }
+    
+    throw new Error(`プロンプト設定の保存に失敗しました: ${errorMessage}`);
   }
 }
 
@@ -149,9 +207,29 @@ export function loadPromptSettings(): PromptSettings {
     if (!stored) {
       return DEFAULT_PROMPT_SETTINGS;
     }
-    return { ...DEFAULT_PROMPT_SETTINGS, ...JSON.parse(stored) };
+    const parsed = JSON.parse(stored);
+    
+    // データの妥当性を検証
+    if (typeof parsed !== "object" || parsed === null) {
+      console.warn("無効なプロンプト設定データが検出されました。デフォルト設定を使用します。");
+      return DEFAULT_PROMPT_SETTINGS;
+    }
+    
+    return { ...DEFAULT_PROMPT_SETTINGS, ...parsed };
   } catch (error) {
-    console.error("プロンプト設定の読み込みに失敗しました:", error);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error("プロンプト設定の読み込みに失敗しました:", errorMessage);
+    
+    // JSON解析エラーの場合は設定をリセット
+    if (error instanceof SyntaxError) {
+      console.warn("プロンプト設定データが破損しています。デフォルト設定を使用します。");
+      try {
+        localStorage.removeItem(PROMPT_STORAGE_KEY);
+      } catch {
+        // 無視
+      }
+    }
+    
     return DEFAULT_PROMPT_SETTINGS;
   }
 }

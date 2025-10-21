@@ -231,10 +231,27 @@ function App() {
         attemptedAction: "handleSendMessage",
       });
 
+      // エラーメッセージをより詳細に
+      let errorText = "不明なエラーが発生しました";
+      if (error instanceof Error) {
+        errorText = error.message;
+        
+        // よくあるエラーパターンに対して具体的なアドバイスを追加
+        if (errorText.includes("API key") || errorText.includes("APIキー")) {
+          errorText += "\n\n💡 設定画面からAPIキーを確認してください。";
+        } else if (errorText.includes("カスタムエンドポイント") || errorText.includes("接続に失敗")) {
+          errorText += "\n\n💡 設定画面で接続先のエンドポイントとサーバーの起動状態を確認してください。";
+        } else if (errorText.includes("network") || errorText.includes("fetch")) {
+          errorText += "\n\n💡 インターネット接続を確認してください。";
+        } else if (errorText.includes("rate limit") || errorText.includes("quota")) {
+          errorText += "\n\n💡 APIの使用制限に達しています。しばらく待ってから再試行してください。";
+        }
+      }
+
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         role: "system",
-        content: `エラー: ${error instanceof Error ? error.message : "不明なエラーが発生しました"}`,
+        content: `❌ エラー: ${errorText}`,
         timestamp: Date.now(),
         isTyping: false,
       };
