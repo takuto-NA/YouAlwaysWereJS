@@ -12,13 +12,24 @@
 
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve } from "node:path";
 
 // Tauri開発時のホスト設定（Tauriから環境変数で渡される）
 const host = process.env.TAURI_DEV_HOST;
 
+const currentDir = dirname(fileURLToPath(import.meta.url));
+const asyncHooksPolyfill = resolve(currentDir, "src/polyfills/asyncLocalStorage.ts");
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()], // ReactプラグインでJSXを処理
+
+  resolve: {
+    alias: {
+      "node:async_hooks": asyncHooksPolyfill,
+    },
+  },
 
   // GitHub Pagesデプロイ時のベースパス
   // 本番環境ではリポジトリ名をベースパスに設定
@@ -64,4 +75,3 @@ export default defineConfig({
     }
   },
 });
-
