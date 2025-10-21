@@ -43,7 +43,7 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
 
   if (isSystem) {
     return (
-      <div className="chat-message chat-message--system animate-slideIn">
+      <div className="chat-message chat-message--system chat-message--enter">
         <p className="chat-message__system-text">{textToDisplay}</p>
         {showTimestamp && (
           <div className="chat-message__timestamp">
@@ -58,7 +58,7 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
   const label = ROLE_LABELS[role];
 
   return (
-    <div className={`chat-message chat-message--${role} animate-slideIn`}>
+    <div className={`chat-message chat-message--${role} chat-message--enter`}>
       <div className="chat-message__inner">
         <div className="chat-message__header">
           <span className={`chat-message__label chat-message__label--${role}`}>{label}</span>

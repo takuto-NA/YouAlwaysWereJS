@@ -51,6 +51,44 @@
   }
 }
 
+@keyframes chatMessageEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(12px) scaleX(0.95);
+    filter: brightness(1.2);
+  }
+  40% {
+    opacity: 0.9;
+    transform: translateY(0) scaleX(1);
+    filter: brightness(1.05);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: brightness(1);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: none;
+  }
+}
+
+@keyframes chatMessageSweep {
+  0% {
+    transform: scaleX(0);
+    opacity: 0;
+  }
+  40% {
+    transform: scaleX(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scaleX(1.1);
+    opacity: 0;
+  }
+}
+
 @keyframes splashGridPulse {
   0% {
     opacity: 0.25;
@@ -173,6 +211,9 @@
   --chat-system-border: rgba(148, 163, 184, 0.35);
   --chat-timestamp-color: #6b7280;
   --chat-typing-dot-color: rgba(148, 163, 184, 0.85);
+  --chat-enter-duration: 420ms;
+  --chat-sweep-duration: 520ms;
+  --chat-sweep-color: rgba(56, 189, 248, 0.65);
 }
 
 html {
@@ -378,8 +419,33 @@ body {
 }
 
 .chat-message {
+  position: relative;
   padding: 1rem 0;
   margin-bottom: 1rem;
+  overflow: visible;
+}
+
+.chat-message--enter {
+  animation: chatMessageEnter var(--chat-enter-duration) cubic-bezier(0.22, 0.7, 0.3, 1);
+}
+
+.chat-message--enter:not(.chat-message--system)::after {
+  content: "";
+  position: absolute;
+  left: -3%;
+  right: -3%;
+  top: 0;
+  height: 2px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--chat-sweep-color),
+    transparent
+  );
+  transform: scaleX(0);
+  transform-origin: left;
+  animation: chatMessageSweep var(--chat-sweep-duration) ease-out;
+  pointer-events: none;
 }
 
 .chat-message__inner {
