@@ -165,6 +165,14 @@
   --splash-shell-bg: #070b11;
   --splash-backdrop-bg: #050608;
   --splash-text-color: #e5e7eb;
+  --chat-user-text: #d1d5db;
+  --chat-assistant-text: #f9fafb;
+  --chat-label-user: rgba(156, 163, 175, 0.85);
+  --chat-label-assistant: #ffffff;
+  --chat-system-text: rgba(156, 163, 175, 0.85);
+  --chat-system-border: rgba(148, 163, 184, 0.35);
+  --chat-timestamp-color: #6b7280;
+  --chat-typing-dot-color: rgba(148, 163, 184, 0.85);
 }
 
 html {
@@ -355,4 +363,114 @@ body {
   animation-duration: var(--splash-content-exit-ms, 0.3s);
   animation-timing-function: ease-in;
   animation-fill-mode: forwards;
+}
+
+@keyframes chatTypingDot {
+  0%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.chat-message {
+  padding: 1rem 0;
+  margin-bottom: 1rem;
+}
+
+.chat-message__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.chat-message__header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.chat-message__label {
+  font-size: 0.75rem;
+  letter-spacing: 0.35rem;
+  text-transform: uppercase;
+  font-weight: 300;
+}
+
+.chat-message__label--user {
+  color: var(--chat-label-user);
+}
+
+.chat-message__label--assistant {
+  color: var(--chat-label-assistant);
+}
+
+.chat-message__typing {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.chat-message__typing-dot {
+  width: 0.35rem;
+  height: 0.35rem;
+  border-radius: 9999px;
+  background-color: var(--chat-typing-dot-color);
+  animation: chatTypingDot 1s ease-in-out infinite;
+}
+
+.chat-message__typing-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.chat-message__typing-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.chat-message__body {
+  font-size: 1rem;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.chat-message__body--user {
+  color: var(--chat-user-text);
+}
+
+.chat-message__body--assistant {
+  color: var(--chat-assistant-text);
+}
+
+.chat-message__cursor {
+  display: inline-block;
+  margin-left: 0.25rem;
+  width: 0.18rem;
+  height: 1.1rem;
+  background-color: currentColor;
+  animation: blink 1s step-end infinite;
+}
+
+.chat-message__timestamp {
+  font-size: 0.7rem;
+  color: var(--chat-timestamp-color);
+  letter-spacing: 0.15rem;
+  text-transform: uppercase;
+  margin-top: 0.5rem;
+}
+
+.chat-message--system {
+  border-left: 2px solid var(--chat-system-border);
+  padding: 0.75rem 0 0.75rem 1rem;
+}
+
+.chat-message__system-text {
+  color: var(--chat-system-text);
+  font-size: 0.78rem;
+  letter-spacing: 0.35rem;
+  text-transform: uppercase;
 }

@@ -6,13 +6,17 @@
 import { Message } from "../types/chat";
 import { useTypewriter } from "../hooks/useTypewriter";
 import { DEFAULT_TYPEWRITER_SPEED_MS } from "../constants/typewriter";
-import { ANIMATION_DELAYS } from "../constants/animations";
 
 interface ChatMessageProps {
   message: Message;
   enableTypewriter?: boolean;
   showTimestamp?: boolean;
 }
+
+const ROLE_LABELS: Record<Exclude<Message["role"], "system">, string> = {
+  user: "You",
+  assistant: "AI",
+};
 
 function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }: ChatMessageProps) {
   const isUser = message.role === "user";
@@ -23,7 +27,6 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
   const shouldUseTypewriter = enableTypewriter && isAssistant && message.isTyping !== false;
 
   // 設定から速度を取得
-  // localStorageから取得できない場合はデフォルト値を使用
   const typewriterSpeed =
     typeof window !== "undefined"
       ? JSON.parse(localStorage.getItem("chat_app_settings") || "{}").typewriterSpeed ||
@@ -36,15 +39,14 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
     enabled: shouldUseTypewriter,
   });
 
-  // 表示するテキスト（タイプライター効果適用済み）
   const textToDisplay = shouldUseTypewriter ? displayedText : message.content;
 
   if (isSystem) {
     return (
-      <div className="py-3 mb-4 border-l-2 border-gray-700 pl-4 animate-slideIn">
-        <div className="text-gray-500 text-sm uppercase tracking-wider">{textToDisplay}</div>
+      <div className="chat-message chat-message--system animate-slideIn">
+        <p className="chat-message__system-text">{textToDisplay}</p>
         {showTimestamp && (
-          <div className="text-gray-700 text-xs mt-1">
+          <div className="chat-message__timestamp">
             {new Date(message.timestamp).toLocaleString()}
           </div>
         )}
@@ -52,46 +54,30 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
     );
   }
 
+  const role = isUser ? "user" : "assistant";
+  const label = ROLE_LABELS[role];
+
   return (
-    <div className={`py-4 mb-4 animate-slideIn ${isUser ? "opacity-90" : ""}`}>
-      <div className="flex flex-col gap-2">
-        {/* ロールラベル */}
-        <div className="flex items-center gap-3">
-          <div
-            className={`text-xs uppercase tracking-widest font-light ${
-              isUser ? "text-gray-400" : "text-white"
-            }`}
-          >
-            {isUser ? "You" : "AI"}
-          </div>
+    <div className={`chat-message chat-message--${role} animate-slideIn`}>
+      <div className="chat-message__inner">
+        <div className="chat-message__header">
+          <span className={`chat-message__label chat-message__label--${role}`}>{label}</span>
           {isTyping && (
-            <div className="flex items-center gap-1">
-              <div className="w-1 h-1 bg-gray-500 rounded-full animate-pulse"></div>
-              <div
-                className="w-1 h-1 bg-gray-500 rounded-full animate-pulse"
-                style={{ animationDelay: ANIMATION_DELAYS.MEDIUM }}
-              ></div>
-              <div
-                className="w-1 h-1 bg-gray-500 rounded-full animate-pulse"
-                style={{ animationDelay: ANIMATION_DELAYS.LONG }}
-              ></div>
+            <div className="chat-message__typing" aria-hidden="true">
+              <span className="chat-message__typing-dot" />
+              <span className="chat-message__typing-dot" />
+              <span className="chat-message__typing-dot" />
             </div>
           )}
         </div>
 
-        {/* メッセージ本文 */}
-        <div
-          className={`text-base leading-relaxed whitespace-pre-wrap ${
-            isUser ? "text-gray-300" : "text-white"
-          }`}
-        >
+        <div className={`chat-message__body chat-message__body--${role}`}>
           {textToDisplay}
-          {isTyping && <span className="inline-block ml-1 w-2 h-5 bg-white animate-blink"></span>}
+          {isTyping && <span className="chat-message__cursor" aria-hidden="true" />}
         </div>
 
-        {/* タイムスタンプ */}
         {showTimestamp && (
-          <div className="text-gray-700 text-xs mt-1">
+          <div className="chat-message__timestamp">
             {new Date(message.timestamp).toLocaleString()}
           </div>
         )}

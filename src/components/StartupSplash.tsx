@@ -3,6 +3,7 @@
  * Edex UIを参考にしたスキャンラインとフラッシュトランジションを再現
  */
 import { useEffect, useState } from "react";
+import type { CSSProperties } from "react";
 import {
   SPLASH_DISPLAY_DURATION_MS,
   SPLASH_FADE_DURATION_MS,
@@ -54,7 +55,7 @@ function StartupSplash({ onComplete }: StartupSplashProps) {
   const phaseClass = phase === "exit" ? "splash-shell-exit" : "splash-shell-enter";
   const contentPhaseClass = phase === "exit" ? "splash-content-exit" : "splash-content-enter";
 
-  const animationVariables: React.CSSProperties = {
+  const animationVariables: CSSProperties = {
     "--splash-shell-enter-ms": `${SPLASH_SHELL_ENTER_MS}ms`,
     "--splash-shell-exit-ms": `${SPLASH_SHELL_EXIT_MS}ms`,
     "--splash-content-enter-ms": `${SPLASH_CONTENT_ENTER_MS}ms`,
