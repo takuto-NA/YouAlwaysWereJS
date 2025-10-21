@@ -13,6 +13,8 @@ import {
   SPLASH_CONTENT_EXIT_MS,
 } from "../constants/animations";
 
+type CSSCustomProperties = CSSProperties & Record<`--${string}`, string | number>;
+
 interface StartupSplashProps {
   onComplete?: () => void;
 }
@@ -55,7 +57,7 @@ function StartupSplash({ onComplete }: StartupSplashProps) {
   const phaseClass = phase === "exit" ? "splash-shell-exit" : "splash-shell-enter";
   const contentPhaseClass = phase === "exit" ? "splash-content-exit" : "splash-content-enter";
 
-  const animationVariables: CSSProperties = {
+  const animationVariables: CSSCustomProperties = {
     "--splash-shell-enter-ms": `${SPLASH_SHELL_ENTER_MS}ms`,
     "--splash-shell-exit-ms": `${SPLASH_SHELL_EXIT_MS}ms`,
     "--splash-content-enter-ms": `${SPLASH_CONTENT_ENTER_MS}ms`,
