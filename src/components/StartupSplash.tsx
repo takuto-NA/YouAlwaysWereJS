@@ -6,6 +6,10 @@ import { useEffect, useState } from "react";
 import {
   SPLASH_DISPLAY_DURATION_MS,
   SPLASH_FADE_DURATION_MS,
+  SPLASH_SHELL_ENTER_MS,
+  SPLASH_SHELL_EXIT_MS,
+  SPLASH_CONTENT_ENTER_MS,
+  SPLASH_CONTENT_EXIT_MS,
 } from "../constants/animations";
 
 interface StartupSplashProps {
@@ -50,9 +54,16 @@ function StartupSplash({ onComplete }: StartupSplashProps) {
   const phaseClass = phase === "exit" ? "splash-shell-exit" : "splash-shell-enter";
   const contentPhaseClass = phase === "exit" ? "splash-content-exit" : "splash-content-enter";
 
+  const animationVariables: React.CSSProperties = {
+    "--splash-shell-enter-ms": `${SPLASH_SHELL_ENTER_MS}ms`,
+    "--splash-shell-exit-ms": `${SPLASH_SHELL_EXIT_MS}ms`,
+    "--splash-content-enter-ms": `${SPLASH_CONTENT_ENTER_MS}ms`,
+    "--splash-content-exit-ms": `${SPLASH_CONTENT_EXIT_MS}ms`,
+  };
+
   return (
     <div className="splash-overlay" aria-label="System boot sequence">
-      <div className="splash-stack">
+      <div className="splash-stack" style={animationVariables}>
         <div className={`splash-shell ${phaseClass}`} aria-hidden>
           <div className="splash-backdrop" aria-hidden />
           <div className="splash-grid" aria-hidden />

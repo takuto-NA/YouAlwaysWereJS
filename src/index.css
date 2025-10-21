@@ -160,6 +160,11 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  --splash-accent-rgb: 0 160 255;
+  --splash-shell-bg: #070b11;
+  --splash-backdrop-bg: #050608;
+  --splash-text-color: #e5e7eb;
 }
 
 html {
@@ -228,9 +233,9 @@ body {
 .splash-shell {
   position: absolute;
   inset: 0;
-  border: 1px solid rgba(0, 190, 255, 0.28);
-  background-color: #070b11;
-  box-shadow: 0 0 26px rgba(0, 180, 255, 0.22);
+  border: 1px solid rgb(var(--splash-accent-rgb) / 0.28);
+  background-color: var(--splash-shell-bg);
+  box-shadow: 0 0 26px rgb(var(--splash-accent-rgb) / 0.22);
   overflow: hidden;
   transform-origin: center;
   pointer-events: none;
@@ -238,17 +243,22 @@ body {
 }
 
 .splash-shell-enter {
-  animation: splashRevealIn 0.6s cubic-bezier(0.4, 0, 0.1, 1);
+  animation-name: splashRevealIn;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.1, 1);
+  animation-duration: var(--splash-shell-enter-ms, 0.6s);
 }
 
 .splash-shell-exit {
-  animation: splashRevealOut 0.45s cubic-bezier(0.66, 0, 0.4, 1) forwards;
+  animation-name: splashRevealOut;
+  animation-timing-function: cubic-bezier(0.66, 0, 0.4, 1);
+  animation-duration: var(--splash-shell-exit-ms, 0.45s);
+  animation-fill-mode: forwards;
 }
 
 .splash-backdrop {
   position: absolute;
   inset: 0;
-  background-color: #050608;
+  background-color: var(--splash-backdrop-bg);
 }
 
 .splash-grid {
@@ -266,7 +276,7 @@ body {
   left: 0;
   right: 0;
   height: 40%;
-  background-color: rgba(0, 140, 255, 0.14);
+  background-color: rgb(var(--splash-accent-rgb) / 0.14);
   animation: splashScanline 1.8s linear infinite;
 }
 
@@ -278,7 +288,7 @@ body {
   text-align: center;
   text-transform: uppercase;
   letter-spacing: 0.4rem;
-  color: #e5e7eb;
+  color: var(--splash-text-color);
   z-index: 1;
   pointer-events: none;
 }
@@ -302,7 +312,7 @@ body {
   width: 100%;
   height: 1px;
   margin: 1.2rem 0;
-  background-color: rgba(0, 160, 255, 0.35);
+  background-color: rgb(var(--splash-accent-rgb) / 0.35);
 }
 
 .splash-subtitle {
@@ -335,9 +345,14 @@ body {
 }
 
 .splash-content-enter {
-  animation: splashContentIn 0.35s ease-out;
+  animation-name: splashContentIn;
+  animation-duration: var(--splash-content-enter-ms, 0.35s);
+  animation-timing-function: ease-out;
 }
 
 .splash-content-exit {
-  animation: splashContentOut 0.3s ease-in forwards;
+  animation-name: splashContentOut;
+  animation-duration: var(--splash-content-exit-ms, 0.3s);
+  animation-timing-function: ease-in;
+  animation-fill-mode: forwards;
 }
