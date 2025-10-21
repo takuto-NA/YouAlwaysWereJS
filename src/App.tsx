@@ -9,6 +9,7 @@ import ChatInput from "./components/ChatInput";
 import SettingsModal from "./components/SettingsModal";
 import PromptEditorModal from "./components/PromptEditorModal";
 import DisplaySettingsModal from "./components/DisplaySettingsModal";
+import StartupSplash from "./components/StartupSplash";
 import { Message, ChatState } from "./types/chat";
 import { PromptSettings } from "./types/prompt";
 import { DisplaySettings } from "./types/game";
@@ -29,6 +30,7 @@ function App() {
   const [settings, setSettings] = useState<AppSettings>(loadSettings());
   const [promptSettings, setPromptSettings] = useState<PromptSettings>(loadPromptSettings());
   const [displaySettings, setDisplaySettings] = useState<DisplaySettings>(loadDisplaySettings());
+  const [isSplashVisible, setIsSplashVisible] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 初期化と設定チェック
@@ -282,6 +284,8 @@ function App() {
 
   return (
     <div className="fixed inset-0 bg-black flex flex-col touch-none">
+      {isSplashVisible && <StartupSplash onComplete={() => setIsSplashVisible(false)} />}
+
       {/* 設定モーダル */}
       <SettingsModal
         isOpen={isSettingsOpen}
