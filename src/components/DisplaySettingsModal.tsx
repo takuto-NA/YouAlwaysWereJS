@@ -14,7 +14,8 @@ import {
 import { DisplaySettings, DisplayMode } from "../types/game";
 import { loadDisplaySettings, saveDisplaySettings } from "../utils/storage";
 import { logDebug } from "../utils/errorHandler";
-import { SAVE_MESSAGE_TIMEOUT_MS } from "../constants/animations";
+import { useSaveState } from "../hooks/useSaveState";
+import SaveButton from "./SaveButton";
 
 interface DisplaySettingsModalProps {
   isOpen: boolean;
@@ -25,11 +26,10 @@ interface DisplaySettingsModalProps {
 function DisplaySettingsModal({ isOpen, onClose, onSave }: DisplaySettingsModalProps) {
   const [settings, setSettings] = useState<DisplaySettings>(loadDisplaySettings());
   const [originalSettings, setOriginalSettings] = useState<DisplaySettings>(loadDisplaySettings());
-  const [isSaving, setIsSaving] = useState(false);
-  const [saveMessage, setSaveMessage] = useState("");
   const [showUnsavedWarning, setShowUnsavedWarning] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const { isSaving, saveMessage, executeSave, resetSaveMessage } = useSaveState({ onClose });
 
   // 設定が変更されたかどうかを確認
   const hasUnsavedChanges = useCallback(() => {
@@ -42,7 +42,7 @@ function DisplaySettingsModal({ isOpen, onClose, onSave }: DisplaySettingsModalP
       const loadedSettings = loadDisplaySettings();
       setSettings(loadedSettings);
       setOriginalSettings(loadedSettings);
-      setSaveMessage("");
+      resetSaveMessage();
       setShowUnsavedWarning(false);
       // bodyのスクロールを無効化
       document.body.style.overflow = "hidden";
@@ -122,38 +122,16 @@ function DisplaySettingsModal({ isOpen, onClose, onSave }: DisplaySettingsModalP
   }, [isOpen]);
 
   const handleSave = () => {
-    try {
-      setIsSaving(true);
+    executeSave(() => {
       saveDisplaySettings(settings);
       onSave(settings);
       setOriginalSettings(settings);
-      setSaveMessage("SAVED");
       logDebug("DisplaySettings", "表示設定を保存しました", {
         mode: settings.mode,
         showTimestamps: settings.showTimestamps,
         showDebugInfo: settings.showDebugInfo,
       });
-
-      // 保存完了メッセージを一定時間後に消去してモーダルを閉じる
-      setTimeout(() => {
-        setSaveMessage("");
-        onClose();
-      }, SAVE_MESSAGE_TIMEOUT_MS);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "設定の保存に失敗しました";
-      setSaveMessage(`ERROR: ${errorMessage}`);
-      logDebug("DisplaySettings", "表示設定の保存に失敗しました", { 
-        error: errorMessage,
-        settings 
-      });
-      
-      // エラーメッセージを5秒後に消去
-      setTimeout(() => {
-        setSaveMessage("");
-      }, 5000);
-    } finally {
-      setIsSaving(false);
-    }
+    });
   };
 
   const handleClose = useCallback(() => {
@@ -377,19 +355,6 @@ function DisplaySettingsModal({ isOpen, onClose, onSave }: DisplaySettingsModalP
             )}
           </div>
 
-          {/* 保存メッセージ */}
-          {saveMessage && (
-            <div
-              className={`flex items-center justify-center gap-2 py-3 px-4 border animate-fadeIn ${
-                saveMessage.startsWith("SAVED")
-                  ? "bg-green-900/20 border-green-600/50 text-green-200"
-                  : "bg-red-900/20 border-red-600/50 text-red-200"
-              }`}
-            >
-              <CheckCircleIcon className="w-5 h-5" />
-              <span className="uppercase tracking-wider text-sm font-light">{saveMessage}</span>
-            </div>
-          )}
         </div>
 
         {/* フッター */}
@@ -400,13 +365,12 @@ function DisplaySettingsModal({ isOpen, onClose, onSave }: DisplaySettingsModalP
           >
             Cancel
           </button>
-          <button
+          <SaveButton
             onClick={handleSave}
             disabled={isSaving}
-            className="px-8 py-2.5 bg-white text-black hover:bg-gray-200 border border-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-wider text-sm font-medium focus:outline-none focus:ring-2 focus:ring-white"
-          >
-            {isSaving ? "Saving..." : "Save"}
-          </button>
+            isSaving={isSaving}
+            saveMessage={saveMessage}
+          />
         </div>
       </div>
     </div>
