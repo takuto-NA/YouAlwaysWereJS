@@ -33,6 +33,8 @@ export default [
         HTMLInputElement: "readonly",
         HTMLButtonElement: "readonly",
         KeyboardEvent: "readonly",
+        AbortSignal: "readonly",
+        URL: "readonly",
       },
     },
     plugins: {
@@ -59,11 +61,28 @@ export default [
       "no-console": [
         "warn",
         {
-          allow: ["warn", "error", "log"],
+          allow: ["warn", "error"],
         },
       ],
       "prefer-const": "error",
       "no-var": "error",
+      "no-magic-numbers": [
+        "warn",
+        {
+          ignore: [0, 1, -1],
+          ignoreArrayIndexes: true,
+          enforceConst: true,
+          detectObjects: false,
+        },
+      ],
+      "max-lines-per-function": [
+        "warn",
+        {
+          max: 60,
+          skipBlankLines: true,
+          skipComments: true,
+        },
+      ],
     },
     settings: {
       react: {

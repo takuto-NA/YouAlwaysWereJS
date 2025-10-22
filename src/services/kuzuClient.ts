@@ -1,8 +1,77 @@
+/**
+ * Why this module matters:
+ * - Shields KuzuDB WASM specifics from the rest of the app so LangGraph agents can call a stable API.
+ * - Serialises filesystem work to avoid race conditions when multiple automated actions run.
+ */
+import { logDebug, logWarning, getErrorMessage } from "../utils/errorHandler";
+
 const KUZU_DB_DIR = "/database";
 const KUZU_DB_PATH = `${KUZU_DB_DIR}/persistent.db`;
 const KUZU_WORKER_PATH = "/kuzu-wasm/kuzu_wasm_worker.js";
 const KUZU_MODULE_PATH = "/kuzu-wasm/index.js";
 const BASE_PATH = import.meta.env?.BASE_URL ?? "/";
+
+const KUZU_LOG_CONTEXT = "KuzuClient";
+const FILESYSTEM_RETRY_DELAY_MS = 50;
+const MAX_STRING_EXTRACTION_DEPTH = 5;
+const DEFAULT_PREVIEW_LIMIT = 25;
+const MIN_COLUMN_TOKENS = 2;
+
+interface KuzuFileSystem {
+  mkdir(path: string): Promise<void>;
+  unlink(path: string): Promise<void>;
+  mountIdbfs(path: string): Promise<void>;
+  syncfs(populate: boolean): Promise<void>;
+  unmount(path: string): Promise<void>;
+  writeFile?(path: string, content: string): Promise<void>;
+}
+
+interface KuzuDatabase {
+  close(): Promise<void>;
+}
+
+interface KuzuQueryResultHandle {
+  getColumnNames(): Promise<string[]>;
+  getAllObjects(): Promise<QueryRow[]>;
+  close(): Promise<void>;
+}
+
+interface KuzuConnection {
+  query(sql: string): Promise<KuzuQueryResultHandle>;
+  close(): Promise<void>;
+}
+
+interface KuzuModule {
+  Database: new (path: string) => KuzuDatabase;
+  Connection: new (db: KuzuDatabase) => KuzuConnection;
+  FS: KuzuFileSystem;
+  setWorkerPath?(path: string): void;
+}
+
+interface KuzuExecutionContext {
+  kuzu: KuzuModule;
+  db: KuzuDatabase;
+  conn: KuzuConnection;
+}
+
+const ERROR_CODES = {
+  FILE_EXISTS: "EEXIST",
+  INVALID_ARGUMENT: "EINVAL",
+  NO_ENTITY: "ENOENT",
+  RESOURCE_BUSY: "EBUSY",
+} as const;
+
+const ERROR_ERRNO = {
+  FILE_EXISTS: 17,
+  FILE_EXISTS_NEGATIVE: -17,
+  NOT_A_DIRECTORY: 20,
+  RESOURCE_BUSY: 16,
+  RESOURCE_BUSY_NEGATIVE: -16,
+  NO_SPACE: 28,
+  NO_SPACE_NEGATIVE: -28,
+  NO_ENTITY: 2,
+  NO_ENTITY_NEGATIVE: -2,
+} as const;
 
 export const KUZU_DEMO_FLAG = "kuzuDemoInitialized";
 const KUZU_FALLBACK_TABLES_KEY = "kuzuFallbackTables";
@@ -64,12 +133,11 @@ export interface TablePreview {
 export interface SeedDemoOptions {
   signal?: AbortSignal;
   onLog?: (message: string) => void;
-  kuzuInstance?: any;
+  kuzuInstance?: KuzuModule;
 }
 
-let kuzuModulePromise: Promise<any> | null = null;
+let kuzuModulePromise: Promise<KuzuModule> | null = null;
 let catalogProceduresSupported: boolean | null = null;
-let catalogWarningLogged = false;
 let operationQueue: Promise<void> = Promise.resolve();
 
 function ensureBrowserEnvironment() {
@@ -87,13 +155,15 @@ function resolveAssetUrl(relativePath: string): string {
   return new URL(`${base}${normalized}`, window.location.origin).href;
 }
 
-export async function loadKuzuModule(): Promise<any> {
+export async function loadKuzuModule(): Promise<KuzuModule> {
   ensureBrowserEnvironment();
   if (!kuzuModulePromise) {
     kuzuModulePromise = (async () => {
       const moduleUrl = resolveAssetUrl(KUZU_MODULE_PATH);
-      const module: any = await import(/* @vite-ignore */ moduleUrl);
-      const kuzu = module.default ?? module;
+      const importedModule: unknown = await import(/* @vite-ignore */ moduleUrl);
+      const kuzuCandidate =
+        (importedModule as { default?: KuzuModule }).default ?? (importedModule as KuzuModule);
+      const kuzu = kuzuCandidate as KuzuModule;
       if (typeof kuzu.setWorkerPath === "function") {
         kuzu.setWorkerPath(resolveAssetUrl(KUZU_WORKER_PATH));
       }
@@ -103,7 +173,7 @@ export async function loadKuzuModule(): Promise<any> {
   return kuzuModulePromise;
 }
 
-export async function runWithConnection<T>(task: (ctx: { kuzu: any; db: any; conn: any }) => Promise<T>): Promise<T> {
+export async function runWithConnection<T>(task: (ctx: KuzuExecutionContext) => Promise<T>): Promise<T> {
   const resultPromise = operationQueue.catch(() => undefined).then(async () => {
     const kuzu = await loadKuzuModule();
     await ensureDirectory(kuzu, KUZU_DB_DIR);
@@ -119,12 +189,12 @@ export async function runWithConnection<T>(task: (ctx: { kuzu: any; db: any; con
       try {
         await conn.close();
       } catch (error) {
-        console.warn("[kuzuClient] Failed to close connection", error);
+        logWarning(KUZU_LOG_CONTEXT, "Failed to close connection", { error });
       }
       try {
         await db.close();
       } catch (error) {
-        console.warn("[kuzuClient] Failed to close database", error);
+        logWarning(KUZU_LOG_CONTEXT, "Failed to close database", { error });
       }
 
       await syncFs(kuzu, false);
@@ -183,7 +253,7 @@ export async function seedDemoData(options: SeedDemoOptions = {}): Promise<void>
       }
       const checkNodes = await runQuery(conn, "MATCH (n) RETURN COUNT(*) AS count");
       const checkRels = await runQuery(conn, "MATCH ()-[r]->() RETURN COUNT(*) AS count");
-      console.log("[kuzuClient] seedDemoData counts", {
+      logDebug(KUZU_LOG_CONTEXT, "Seed demo data counts", {
         nodes: extractCount(checkNodes.rows),
         rels: extractCount(checkRels.rows),
       });
@@ -191,12 +261,12 @@ export async function seedDemoData(options: SeedDemoOptions = {}): Promise<void>
       try {
         await conn.close();
       } catch (error) {
-        console.warn("[kuzuClient] Failed to close connection during seeding", error);
+        logWarning(KUZU_LOG_CONTEXT, "Failed to close connection during seeding", { error });
       }
       try {
         await db.close();
       } catch (error) {
-        console.warn("[kuzuClient] Failed to close database during seeding", error);
+        logWarning(KUZU_LOG_CONTEXT, "Failed to close database during seeding", { error });
       }
     }
 
@@ -247,7 +317,7 @@ export async function listTables(): Promise<TableInfo[]> {
   });
 }
 
-async function tryShowTables(conn: any): Promise<TableInfo[] | null> {
+async function tryShowTables(conn: KuzuConnection): Promise<TableInfo[] | null> {
   if (catalogProceduresSupported === false) {
     return null;
   }
@@ -263,15 +333,14 @@ async function tryShowTables(conn: any): Promise<TableInfo[] | null> {
         type: resolveTableType(row),
         raw: row,
       }));
-    } catch (error) {
+    } catch {
       catalogProceduresSupported = false;
-      catalogWarningLogged = true;
     }
   }
   return null;
 }
 
-async function tryNodeRelTables(conn: any): Promise<TableInfo[]> {
+async function tryNodeRelTables(conn: KuzuConnection): Promise<TableInfo[]> {
   if (catalogProceduresSupported === false) {
     return [];
   }
@@ -296,14 +365,14 @@ async function tryNodeRelTables(conn: any): Promise<TableInfo[]> {
     if (list.length > 0) {
       return list;
     }
-  } catch (error) {
+  } catch {
     catalogProceduresSupported = false;
-    catalogWarningLogged = true;
   }
   return [];
 }
 
-async function listTablesViaLabelScan(conn: any): Promise<TableInfo[]> {
+// eslint-disable-next-line max-lines-per-function -- Legacy fallback logic to be modularised in a follow-up refactor.
+async function listTablesViaLabelScan(conn: KuzuConnection): Promise<TableInfo[]> {
   const nodeResult = await runLabelQuery(conn);
   let relResult: QueryResult | null = null;
   if (nodeResult.rows.length > 0) {
@@ -317,7 +386,7 @@ async function listTablesViaLabelScan(conn: any): Promise<TableInfo[]> {
          ORDER BY tableName`
       );
     } catch (error) {
-      console.warn("[kuzuClient] Failed to list rel types, falling back to nodes only", error);
+      logWarning(KUZU_LOG_CONTEXT, "Failed to list rel types, falling back to nodes only", { error });
     }
   }
 
@@ -329,10 +398,15 @@ async function listTablesViaLabelScan(conn: any): Promise<TableInfo[]> {
       raw && typeof raw === "object" && "toString" in (raw as Record<string, unknown>)
         ? (raw as { toString(): string }).toString()
         : raw;
-    console.log("[kuzuClient] node label row", { row, typeofRaw: typeof raw, rawValue: raw, rawString });
+    logDebug(KUZU_LOG_CONTEXT, "Node label row parsing", {
+      row,
+      typeofRaw: typeof raw,
+      rawValue: raw,
+      rawString,
+    });
     const name = extractString(row.tableName ?? row["tableName"]);
     if (!name) {
-      console.warn("[kuzuClient] Unable to resolve node table name", row);
+      logWarning(KUZU_LOG_CONTEXT, "Unable to resolve node table name", { row });
       continue;
     }
     map.set(name, { name, type: "NODE", raw: row });
@@ -342,7 +416,7 @@ async function listTablesViaLabelScan(conn: any): Promise<TableInfo[]> {
     for (const row of relResult.rows) {
       const name = extractString(row.tableName ?? row["tableName"]);
       if (!name) {
-        console.warn("[kuzuClient] Unable to resolve rel table name", row);
+        logWarning(KUZU_LOG_CONTEXT, "Unable to resolve rel table name", { row });
         continue;
       }
       if (map.has(name)) {
@@ -355,12 +429,12 @@ async function listTablesViaLabelScan(conn: any): Promise<TableInfo[]> {
   }
 
   if (map.size === 0) {
-    console.log("[kuzuClient] No node labels discovered", {
+    logDebug(KUZU_LOG_CONTEXT, "No node labels discovered", {
       columns: nodeResult.columns,
       rows: nodeResult.rows,
     });
     if (relResult) {
-      console.log("[kuzuClient] No rel types discovered", {
+      logDebug(KUZU_LOG_CONTEXT, "No rel types discovered", {
         columns: relResult.columns,
         rows: relResult.rows,
       });
@@ -395,7 +469,7 @@ export async function describeTable(table: TableInfo): Promise<TableSchema> {
   });
 }
 
-export async function previewTable(table: TableInfo, limit = 25): Promise<TablePreview> {
+export async function previewTable(table: TableInfo, limit = DEFAULT_PREVIEW_LIMIT): Promise<TablePreview> {
   return runWithConnection(async ({ conn }) => {
     const label = quoteIdentifier(table.name);
     const nodeQueries = [
@@ -452,14 +526,14 @@ export function quoteIdentifier(identifier: string): string {
   return `\`${identifier.replace(/`/g, "``")}\``;
 }
 
-async function runQuery(conn: any, sql: string): Promise<QueryResult> {
+async function runQuery(conn: KuzuConnection, sql: string): Promise<QueryResult> {
   const queryResult = await conn.query(sql);
   try {
     let columns: string[] = [];
     try {
       columns = await queryResult.getColumnNames();
     } catch (error) {
-      console.warn("[kuzuClient] Failed to get column names", { error, sql });
+      logWarning(KUZU_LOG_CONTEXT, "Failed to get column names", { error, sql });
     }
     const rows: QueryRow[] = await queryResult.getAllObjects();
     if (columns.length === 0 && rows.length > 0) {
@@ -470,7 +544,7 @@ async function runQuery(conn: any, sql: string): Promise<QueryResult> {
     try {
       await queryResult.close();
     } catch (error) {
-      console.warn("[kuzuClient] Failed to close query result", { error, sql });
+      logWarning(KUZU_LOG_CONTEXT, "Failed to close query result", { error, sql });
     }
   }
 }
@@ -547,7 +621,7 @@ function parseTableColumns(createStatement: string): Array<{ name: string; type:
       continue;
     }
     const tokens = segment.split(/\s+/);
-    if (tokens.length >= 2) {
+    if (tokens.length >= MIN_COLUMN_TOKENS) {
       const [name, ...typeTokens] = tokens;
       columns.push({ name, type: typeTokens.join(" ") });
     }
@@ -566,7 +640,7 @@ function storeFallbackTables(tables: TableInfo[]) {
     }));
     window.localStorage.setItem(KUZU_FALLBACK_TABLES_KEY, JSON.stringify(data));
   } catch (error) {
-    console.warn("[kuzuClient] Failed to store fallback tables", error);
+    logWarning(KUZU_LOG_CONTEXT, "Failed to store fallback tables", { error });
   }
 }
 
@@ -588,11 +662,19 @@ function loadFallbackTables(): TableInfo[] {
           raw: { tableName: name, type },
           columns: Array.isArray(item.columns)
             ? item.columns
-                .map((column: any) => {
-                  if (!column || !column.name) return null;
+                .map((column) => {
+                  if (!column || typeof column !== "object") {
+                    return null;
+                  }
+                  const columnRecord = column as Record<string, unknown>;
+                  const columnName = columnRecord.name;
+                  if (typeof columnName !== "string" || columnName.length === 0) {
+                    return null;
+                  }
+                  const columnType = columnRecord.type;
                   return {
-                    name: String(column.name),
-                    type: column.type ? String(column.type) : "",
+                    name: columnName,
+                    type: typeof columnType === "string" ? columnType : "",
                   };
                 })
                 .filter(Boolean)
@@ -601,7 +683,7 @@ function loadFallbackTables(): TableInfo[] {
       })
       .filter((entry): entry is TableInfo => Boolean(entry));
   } catch (error) {
-    console.warn("[kuzuClient] Failed to load fallback tables", error);
+    logWarning(KUZU_LOG_CONTEXT, "Failed to load fallback tables", { error });
     return [];
   }
 }
@@ -667,43 +749,82 @@ function normalizePreviewValue(value: unknown): unknown {
 }
 
 function extractString(value: unknown, depth = 0): string | null {
-  if (value === null || value === undefined) return null;
+  if (value === null || value === undefined) {
+    return null;
+  }
+
   if (typeof value === "string") {
     return value.length > 0 ? value : null;
   }
-  if (depth > 5) {
-    return null;
-  }
-  if (Array.isArray(value)) {
-    for (const entry of value) {
-      const resolved = extractString(entry, depth + 1);
-      if (resolved) return resolved;
-    }
-    return null;
-  }
-  if (typeof value === "object") {
-    if ("value" in (value as Record<string, unknown>)) {
-      const nested = extractString((value as Record<string, unknown>).value, depth + 1);
-      if (nested) return nested;
-    }
-    if ("name" in (value as Record<string, unknown>)) {
-      const nested = extractString((value as Record<string, unknown>).name, depth + 1);
-      if (nested) return nested;
-    }
-    for (const entry of Object.values(value as Record<string, unknown>)) {
-      const nested = extractString(entry, depth + 1);
-      if (nested) return nested;
-    }
-  }
+
   if (typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
-  if (typeof value === "object" && typeof (value as any).toString === "function") {
-    const str = (value as any).toString();
-    if (typeof str === "string" && str.length > 0 && str !== "[object Object]") {
-      return str;
+
+  if (depth > MAX_STRING_EXTRACTION_DEPTH) {
+    return null;
+  }
+
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      const resolved = extractString(entry, depth + 1);
+      if (resolved) {
+        return resolved;
+      }
+    }
+    return null;
+  }
+
+  if (typeof value === "object") {
+    const record = value as Record<string, unknown>;
+
+    if ("value" in record) {
+      const nested = extractString(record.value, depth + 1);
+      if (nested) {
+        return nested;
+      }
+    }
+
+    if ("name" in record) {
+      const nested = extractString(record.name, depth + 1);
+      if (nested) {
+        return nested;
+      }
+    }
+
+    for (const entry of Object.values(record)) {
+      const nested = extractString(entry, depth + 1);
+      if (nested) {
+        return nested;
+      }
+    }
+
+    const stringLike = extractStringFromObject(record);
+    if (stringLike) {
+      return stringLike;
     }
   }
+
+  return null;
+}
+
+function extractStringFromObject(value: Record<string, unknown>): string | null {
+  const jsonCandidate = (value as { toJSON?: () => unknown }).toJSON;
+  if (typeof jsonCandidate === "function") {
+    const jsonResult = jsonCandidate.call(value);
+    if (typeof jsonResult === "string" && jsonResult.length > 0 && jsonResult !== "[object Object]") {
+      return jsonResult;
+    }
+  }
+
+  const stringCandidate = (value as { toString?: () => unknown }).toString;
+  if (typeof stringCandidate === "function") {
+    const strResult = stringCandidate.call(value);
+    if (typeof strResult === "string" && strResult.length > 0 && strResult !== "[object Object]") {
+      return strResult;
+    }
+  }
+
   return null;
 }
 
@@ -722,24 +843,9 @@ function extractCount(rows: QueryRow[]): number {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
-async function firstSuccessfulQuery(conn: any, queries: string[]): Promise<QueryResult> {
-  let lastError: unknown = null;
-  for (const sql of queries) {
-    try {
-      const result = await runQuery(conn, sql);
-      return result;
-    } catch (error) {
-      lastError = error;
-      continue;
-    }
-  }
-  if (lastError) {
-    throw lastError instanceof Error ? lastError : new Error(String(lastError));
-  }
-  return { columns: [], rows: [] };
-}
 
-async function runLabelQuery(conn: any): Promise<QueryResult> {
+
+async function runLabelQuery(conn: KuzuConnection): Promise<QueryResult> {
   const result = await runQuery(
     conn,
     `MATCH (n)
@@ -781,34 +887,39 @@ async function runLabelQuery(conn: any): Promise<QueryResult> {
   return { columns: ["tableName"], rows: Array.from(unique.values()) };
 }
 
-async function removeStaleDatabaseFile(kuzu: any) {
+async function removeStaleDatabaseFile(kuzu: KuzuModule) {
   try {
     await kuzu.FS.unlink(KUZU_DB_PATH);
-  } catch (error: any) {
-    const message = typeof error?.message === "string" ? error.message : "";
-    if (!message.includes("No such file") && error?.code !== "ENOENT") {
+  } catch (error) {
+    const { message, code, errno } = readErrorDetails(error);
+    const isMissingFile =
+      message.includes("No such file") ||
+      code === ERROR_CODES.NO_ENTITY ||
+      errno === ERROR_ERRNO.NO_ENTITY ||
+      errno === ERROR_ERRNO.NO_ENTITY_NEGATIVE;
+    if (!isMissingFile) {
       throw error;
     }
   }
 }
 
-async function ensureDirectory(kuzu: any, path: string) {
+async function ensureDirectory(kuzu: KuzuModule, path: string) {
   try {
     await kuzu.FS.mkdir(path);
-  } catch (error: any) {
+  } catch (error) {
     if (!isExistsError(error)) {
       throw error;
     }
   }
 }
 
-async function remountIdbfs(kuzu: any, path: string) {
+async function remountIdbfs(kuzu: KuzuModule, path: string) {
   await safeUnmount(kuzu, path);
   try {
     await kuzu.FS.mountIdbfs(path);
-  } catch (error: any) {
+  } catch (error) {
     if (isResourceBusy(error)) {
-      await delay(50);
+      await delay(FILESYSTEM_RETRY_DELAY_MS);
       await safeUnmount(kuzu, path, false);
       await kuzu.FS.mountIdbfs(path);
     } else {
@@ -817,68 +928,78 @@ async function remountIdbfs(kuzu: any, path: string) {
   }
 }
 
-async function syncFs(kuzu: any, populate: boolean) {
+async function syncFs(kuzu: KuzuModule, populate: boolean) {
   try {
     await kuzu.FS.syncfs(populate);
   } catch (error) {
-    console.warn("[kuzuClient] FS.syncfs failed", { error, populate });
+    logWarning(KUZU_LOG_CONTEXT, "FS.syncfs failed", { error, populate });
   }
 }
 
-async function safeUnmount(kuzu: any, path: string, warn = true) {
+async function safeUnmount(kuzu: KuzuModule, path: string, warn = true) {
   try {
     await kuzu.FS.unmount(path);
-  } catch (error: any) {
+  } catch (error) {
     if (isNotMountedError(error)) {
       return;
     }
     if (isResourceBusy(error)) {
       if (warn) {
-        console.warn("[kuzuClient] Unmount busy, retrying", { path, error });
+        logWarning(KUZU_LOG_CONTEXT, "Unmount busy, retrying", { path, error });
       }
-      await delay(50);
+      await delay(FILESYSTEM_RETRY_DELAY_MS);
       return safeUnmount(kuzu, path, false);
     }
     throw error;
   }
 }
 
-function isExistsError(error: any): boolean {
-  const message = typeof error?.message === "string" ? error.message : "";
-  const code = typeof error?.code === "string" ? error.code : "";
-  const errno = typeof error?.errno === "number" ? error.errno : undefined;
+function readErrorDetails(error: unknown): { message: string; code: string; errno?: number } {
+  const message = getErrorMessage(error);
+  if (!error || typeof error !== "object") {
+    return { message, code: "" };
+  }
+  const record = error as Record<string, unknown>;
+  const code = typeof record.code === "string" ? record.code : "";
+  const errno = typeof record.errno === "number" ? record.errno : undefined;
+  return { message, code, errno };
+}
+
+function isExistsError(error: unknown): boolean {
+  const { message, code, errno } = readErrorDetails(error);
   return (
     message.includes("File exists") ||
-    code === "EEXIST" ||
-    errno === 17 ||
-    errno === -17 ||
-    errno === 20
+    code === ERROR_CODES.FILE_EXISTS ||
+    errno === ERROR_ERRNO.FILE_EXISTS ||
+    errno === ERROR_ERRNO.FILE_EXISTS_NEGATIVE ||
+    errno === ERROR_ERRNO.NOT_A_DIRECTORY
   );
 }
 
-function isNotMountedError(error: any): boolean {
-  const message = typeof error?.message === "string" ? error.message : "";
-  const code = typeof error?.code === "string" ? error.code : "";
-  const errno = typeof error?.errno === "number" ? error.errno : undefined;
+function isNotMountedError(error: unknown): boolean {
+  const { message, code, errno } = readErrorDetails(error);
   return (
     message.includes("not mounted") ||
     message.includes("No such device") ||
     message.includes("No mount point") ||
     message.includes("Invalid argument") ||
-    code === "EINVAL" ||
-    code === "ENOENT" ||
-    errno === 28 ||
-    errno === -28 ||
-    errno === 2 ||
-    errno === -2
+    code === ERROR_CODES.INVALID_ARGUMENT ||
+    code === ERROR_CODES.NO_ENTITY ||
+    errno === ERROR_ERRNO.NO_SPACE ||
+    errno === ERROR_ERRNO.NO_SPACE_NEGATIVE ||
+    errno === ERROR_ERRNO.NO_ENTITY ||
+    errno === ERROR_ERRNO.NO_ENTITY_NEGATIVE
   );
 }
 
-function isResourceBusy(error: any): boolean {
-  const message = typeof error?.message === "string" ? error.message : "";
-  const code = typeof error?.code === "string" ? error.code : "";
-  const errno = typeof error?.errno === "number" ? error.errno : undefined;
-  return message.includes("Resource busy") || code === "EBUSY" || errno === 16 || errno === -16;
+function isResourceBusy(error: unknown): boolean {
+  const { message, code, errno } = readErrorDetails(error);
+  return (
+    message.includes("Resource busy") ||
+    code === ERROR_CODES.RESOURCE_BUSY ||
+    errno === ERROR_ERRNO.RESOURCE_BUSY ||
+    errno === ERROR_ERRNO.RESOURCE_BUSY_NEGATIVE
+  );
 }
 
 function delay(ms: number) {
