@@ -199,11 +199,16 @@ function App() {
         chatState.messages.length + 1
       );
 
+      const memoryToolInstructions =
+        settings.aiProvider === "openai"
+          ? "\n\n[Memory Tools]\n- Use `kuzu_list_tables` to enumerate available graph tables.\n- Use `kuzu_describe_table` to inspect schemas and review sample rows before modifying data.\n- Use `kuzu_query` to read, insert, update, or delete data. Always include a reasonable LIMIT when reading and never assume results without querying.\n- Treat the database as the source of truth for long-term memory."
+          : "";
+
       // システムプロンプトをメッセージの最初に追加
       const systemMessage: Message = {
         id: "system-prompt",
         role: "system",
-        content: systemPromptText,
+        content: `${systemPromptText}${memoryToolInstructions}`,
         timestamp: Date.now(),
       };
 

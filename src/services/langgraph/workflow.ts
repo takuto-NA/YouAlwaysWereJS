@@ -9,11 +9,12 @@
 
 import { ChatOpenAI } from "@langchain/openai";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { AIMessage, BaseMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
 import { Annotation, StateGraph, START, END } from "@langchain/langgraph";
+import type { StructuredToolInterface } from "@langchain/core/tools";
 
 import { Message } from "../../types/chat";
-import { logDebug, logError } from "../../utils/errorHandler";
+import { logDebug, logError, logWarning } from "../../utils/errorHandler";
 import type { AIProvider } from "../../utils/storage";
 
 const ChatStateAnnotation = Annotation.Root({
@@ -34,10 +35,19 @@ type ChatGraphState = typeof ChatStateAnnotation.State;
 
 type ChatModel = ChatOpenAI | ChatGoogleGenerativeAI;
 
+const MAX_TOOL_ITERATIONS = 6;
+
+interface ModelCallResult {
+  responseText: string;
+  newMessages: BaseMessage[];
+}
+
 export class LangGraphChatWorkflow {
   private readonly provider: AIProvider;
   private readonly model: ChatModel;
   private readonly compiledGraph: ReturnType<LangGraphChatWorkflow["createGraph"]>;
+  private readonly tools: StructuredToolInterface[];
+  private readonly toolMap: Map<string, StructuredToolInterface>;
 
   constructor(
     provider: AIProvider,
@@ -45,10 +55,21 @@ export class LangGraphChatWorkflow {
     modelName: string = "gpt-4o",
     temperature?: number,
     maxTokens?: number,
-    customEndpoint?: string
+    customEndpoint?: string,
+    tools?: StructuredToolInterface[]
   ) {
     this.provider = provider;
-    this.model = this.createModel(provider, apiKey, modelName, temperature, maxTokens, customEndpoint);
+    this.tools = tools?.length ? tools : [];
+    this.toolMap = new Map(this.tools.map((tool) => [tool.name, tool]));
+    this.model = this.createModel(
+      provider,
+      apiKey,
+      modelName,
+      temperature,
+      maxTokens,
+      customEndpoint,
+      this.tools
+    );
     this.compiledGraph = this.createGraph();
   }
 
@@ -106,7 +127,8 @@ export class LangGraphChatWorkflow {
     modelName: string,
     temperature?: number,
     maxTokens?: number,
-    customEndpoint?: string
+    customEndpoint?: string,
+    tools?: StructuredToolInterface[]
   ): ChatModel {
     if (provider === "openai") {
       const isGpt5 = modelName.startsWith("gpt-5");
@@ -121,6 +143,10 @@ export class LangGraphChatWorkflow {
         modelConfig.configuration = {
           baseURL: customEndpoint,
         };
+      }
+
+      if (tools && tools.length > 0) {
+        modelConfig.tools = tools;
       }
 
       if (!isO1 && !isGpt5 && temperature !== undefined) {
@@ -176,12 +202,10 @@ export class LangGraphChatWorkflow {
   private createGraph() {
     const graphBuilder = new StateGraph(ChatStateAnnotation)
       .addNode("invoke-model", async (state: ChatGraphState) => {
-        const modelResponse = await this.callModel(state.messages);
-        const assistantMessage = new AIMessage(modelResponse);
-
+        const result = await this.callModel(state.messages);
         return {
-          messages: assistantMessage,
-          response: modelResponse,
+          messages: result.newMessages,
+          response: result.responseText,
         };
       })
       .addEdge(START, "invoke-model")
@@ -238,12 +262,133 @@ export class LangGraphChatWorkflow {
   /**
    * Invoke the configured chat model with LangChain-formatted messages and extract the response text.
    */
-  private async callModel(messages: BaseMessage[]): Promise<string> {
+  /**
+   * Invoke the configured chat model with LangGraph-formatted messages and extract the response text.
+   */
+  private async callModel(messages: BaseMessage[]): Promise<ModelCallResult> {
     const providerName = this.provider === "openai" ? "OpenAI" : "Gemini";
+    const shouldUseTools = this.tools.length > 0 && this.model instanceof ChatOpenAI;
 
-    let response: BaseMessage;
+    if (shouldUseTools) {
+      return this.callModelWithTools(messages, providerName);
+    }
+
+    const response = await this.invokeChatModel(messages, providerName);
+    const content = this.extractContentFromResponse(response, providerName);
+
+    return {
+      responseText: content,
+      newMessages: [response instanceof AIMessage ? response : new AIMessage(content)],
+    };
+  }
+
+  private async callModelWithTools(
+    initialMessages: BaseMessage[],
+    providerName: string
+  ): Promise<ModelCallResult> {
+    const conversation: BaseMessage[] = [...initialMessages];
+    const appended: BaseMessage[] = [];
+
+    for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration += 1) {
+      const response = await this.invokeChatModel(conversation, providerName);
+      const aiMessage = response;
+      appended.push(aiMessage);
+      conversation.push(aiMessage);
+
+      const toolCalls = Array.isArray(aiMessage.tool_calls) ? aiMessage.tool_calls : [];
+
+      if (toolCalls.length === 0) {
+        const content = this.extractContentFromResponse(aiMessage, providerName);
+        return {
+          responseText: content,
+          newMessages: appended,
+        };
+      }
+
+      for (const call of toolCalls) {
+        const toolName = call.name ?? call.id ?? "unknown_tool";
+        const tool = this.toolMap.get(toolName);
+
+        if (!tool) {
+          const missingToolMessage = new ToolMessage({
+            content: `ERROR: Requested tool "${toolName}" is not available.`,
+            status: "error",
+            tool_call_id: call.id ?? toolName,
+          });
+          appended.push(missingToolMessage);
+          conversation.push(missingToolMessage);
+          continue;
+        }
+
+        let args = call.args ?? {};
+        if (typeof args === "string") {
+          try {
+            args = JSON.parse(args);
+          } catch (parseError) {
+            logWarning("LangGraph", "Failed to parse tool args, passing raw string", {
+              tool: toolName,
+              args,
+              error: parseError,
+            });
+          }
+        }
+
+        try {
+          logDebug("LangGraph", "Invoking tool", { tool: toolName, iteration, args });
+          const result = await tool.invoke(args);
+          const stringResult =
+            typeof result === "string"
+              ? result
+              : (() => {
+                  try {
+                    return JSON.stringify(result, null, 2);
+                  } catch {
+                    return String(result);
+                  }
+                })();
+          const toolMessage = new ToolMessage(
+            {
+              content: stringResult,
+              status: "success",
+              tool_call_id: call.id ?? toolName,
+            },
+            call.id ?? toolName,
+            toolName
+          );
+          appended.push(toolMessage);
+          conversation.push(toolMessage);
+        } catch (toolError) {
+          logError("LangGraph", toolError, { tool: toolName, args });
+          const errorMessage = toolError instanceof Error ? toolError.message : String(toolError);
+          const errorToolMessage = new ToolMessage({
+            content: `Tool "${toolName}" failed: ${errorMessage}`,
+            status: "error",
+            tool_call_id: call.id ?? toolName,
+          });
+          appended.push(errorToolMessage);
+          conversation.push(errorToolMessage);
+        }
+      }
+    }
+
+    throw new Error(
+      `Tool interaction exceeded ${MAX_TOOL_ITERATIONS} iterations without producing a final response.`
+    );
+  }
+
+  private async invokeChatModel(
+    messages: BaseMessage[],
+    providerName: string
+  ): Promise<AIMessage> {
     try {
-      response = await this.model.invoke(messages);
+      const response =
+        this.tools.length > 0 && this.model instanceof ChatOpenAI
+          ? await this.model.bindTools(this.tools, { tool_choice: "auto" }).invoke(messages)
+          : await this.model.invoke(messages);
+      if (response instanceof AIMessage) {
+        return response;
+      }
+      return new AIMessage(response.content ?? "");
     } catch (invokeError: unknown) {
       let errorMessage = invokeError instanceof Error ? invokeError.message : String(invokeError);
       let errorDetails = "";
@@ -252,15 +397,18 @@ export class LangGraphChatWorkflow {
         const errObj = invokeError as Record<string, unknown>;
 
         if (errObj.cause) {
-          errorDetails += `\n原因: ${JSON.stringify(errObj.cause)}`;
+          errorDetails += `
+原因: ${JSON.stringify(errObj.cause)}`;
         }
 
         if (errObj.status) {
-          errorDetails += `\nHTTPステータス: ${errObj.status}`;
+          errorDetails += `
+HTTPステータス: ${errObj.status}`;
         }
 
         if (errObj.response) {
-          errorDetails += `\nレスポンス: ${JSON.stringify(errObj.response)}`;
+          errorDetails += `
+レスポンス: ${JSON.stringify(errObj.response)}`;
         }
       }
 
@@ -270,30 +418,42 @@ export class LangGraphChatWorkflow {
 
         if (baseURL && baseURL !== "https://api.openai.com/v1") {
           if (errorMessage.includes("Cannot read properties of undefined")) {
-            errorMessage = "サーバーからの応答形式が不正です。LM Studioが正しく稼働しているか確認してください。";
+            errorMessage =
+              "サーバーからの応答形式が不正です。LM Studioが正しく稼働しているか確認してください。";
           }
 
           throw new Error(
-            `カスタムエンドポイント (${baseURL}) への接続に失敗しました。\n` +
-              `エラー: ${errorMessage}${errorDetails}\n\n` +
-              `確認事項:\n` +
-              `1. LM Studioが起動しているか\n` +
-              `2. モデルがロードされているか\n` +
-              `3. エンドポイントURL (${baseURL}) が正しいか\n` +
-              `4. ネットワーク接続が正常か (${baseURL.includes("192.168") ? "ローカルネットワーク" : ""})`
+            `カスタムエンドポイント (${baseURL}) への接続に失敗しました。
+` +
+              `エラー: ${errorMessage}${errorDetails}
+
+` +
+              `確認事項:
+` +
+              `1. LM Studioが起動しているか
+` +
+              `2. モデルがロードされているか
+` +
+              `3. エンドポイントURL (${baseURL}) が正しいか
+` +
+              `4. ネットワーク接続が正常か${baseURL.includes("192.168") ? "（ローカルネットワーク）" : ""}`
           );
         }
       }
 
       throw new Error(`${providerName} API呼び出しエラー: ${errorMessage}${errorDetails}`);
     }
+  }
 
+  private extractContentFromResponse(response: BaseMessage, providerName: string): string {
     if (!response) {
       throw new Error(`${providerName} APIからのレスポンスが空です。サーバーが正しく起動しているか確認してください。`);
     }
 
     if (!response.content) {
-      throw new Error(`${providerName} APIのレスポンスにcontentが含まれていません。レスポンス: ${JSON.stringify(response)}`);
+      throw new Error(
+        `${providerName} APIのレスポンスにcontentが含まれていません。レスポンス: ${JSON.stringify(response)}`
+      );
     }
 
     logDebug("LangGraph", `レスポンス型確認 (${providerName})`, {
@@ -331,6 +491,7 @@ export class LangGraphChatWorkflow {
 
     return content;
   }
+
 }
 
 /**
@@ -342,8 +503,9 @@ export function createChatWorkflow(
   model: string = "gpt-4o",
   temperature?: number,
   maxTokens?: number,
-  customEndpoint?: string
+  customEndpoint?: string,
+  tools?: StructuredToolInterface[]
 ): LangGraphChatWorkflow {
-  return new LangGraphChatWorkflow(provider, apiKey, model, temperature, maxTokens, customEndpoint);
+  return new LangGraphChatWorkflow(provider, apiKey, model, temperature, maxTokens, customEndpoint, tools);
 }
 

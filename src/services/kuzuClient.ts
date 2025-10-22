@@ -227,6 +227,10 @@ export async function seedDemoData(options: SeedDemoOptions = {}): Promise<void>
   await queueOperation(async () => {
     const kuzu = kuzuInstance ?? (await loadKuzuModule());
 
+    if (typeof kuzu.FS.writeFile !== "function") {
+      throw new Error("Kuzu FS.writeFile is unavailable in this environment.");
+    }
+
     log("Writing CSV seed files into the in-memory FS...");
     for (const [filename, csv] of Object.entries(CSV_SEED_DATA)) {
       if (signal?.aborted) throw new Error("RUN_ABORTED");
@@ -276,7 +280,7 @@ export async function seedDemoData(options: SeedDemoOptions = {}): Promise<void>
     log("Database persisted to IndexedDB.");
 
     const fallbackTables = buildFallbackTables();
-    storeFallbackTables(fallbackTables);
+    replaceFallbackTables(fallbackTables);
   });
 }
 
@@ -292,13 +296,13 @@ export async function listTables(): Promise<TableInfo[]> {
   return runWithConnection(async ({ conn }) => {
     const resultFromShow = await tryShowTables(conn);
     if (resultFromShow) {
-      storeFallbackTables(resultFromShow);
+      replaceFallbackTables(resultFromShow);
       return resultFromShow;
     }
 
     const resultFromNodeRel = await tryNodeRelTables(conn);
     if (resultFromNodeRel.length > 0) {
-      storeFallbackTables(resultFromNodeRel);
+      replaceFallbackTables(resultFromNodeRel);
       return resultFromNodeRel;
     }
 
@@ -309,7 +313,7 @@ export async function listTables(): Promise<TableInfo[]> {
 
     const labelTables = await listTablesViaLabelScan(conn);
     if (labelTables.length > 0) {
-      storeFallbackTables(labelTables);
+      replaceFallbackTables(labelTables);
       return labelTables;
     }
 
@@ -629,19 +633,61 @@ function parseTableColumns(createStatement: string): Array<{ name: string; type:
   return columns;
 }
 
-function storeFallbackTables(tables: TableInfo[]) {
+function normalizeTableName(name: string): string {
+  return name.trim().toLowerCase();
+}
+
+function tableToStorageShape(table: TableInfo) {
+  return {
+    name: table.name,
+    type: table.type,
+    columns: table.columns,
+  };
+}
+
+function writeFallbackTables(tables: TableInfo[]) {
   if (typeof window === "undefined") return;
-  if (!Array.isArray(tables) || tables.length === 0) return;
   try {
-    const data = tables.map((table) => ({
-      name: table.name,
-      type: table.type,
-      columns: table.columns,
-    }));
-    window.localStorage.setItem(KUZU_FALLBACK_TABLES_KEY, JSON.stringify(data));
+    window.localStorage.setItem(
+      KUZU_FALLBACK_TABLES_KEY,
+      JSON.stringify(tables.map(tableToStorageShape))
+    );
+  } catch (error) {
+    logWarning(KUZU_LOG_CONTEXT, "Failed to write fallback tables", { error });
+  }
+}
+
+function storeFallbackTables(tables: TableInfo[]) {
+  if (!Array.isArray(tables) || tables.length === 0) {
+    writeFallbackTables([]);
+    return;
+  }
+
+  try {
+    const existing = loadFallbackTables();
+    const merged = new Map<string, TableInfo>();
+
+    for (const table of existing) {
+      merged.set(normalizeTableName(table.name), table);
+    }
+
+    for (const table of tables) {
+      merged.set(normalizeTableName(table.name), {
+        name: table.name,
+        type: table.type,
+        raw: table.raw,
+        columns: table.columns,
+      });
+    }
+
+    writeFallbackTables(Array.from(merged.values()));
   } catch (error) {
     logWarning(KUZU_LOG_CONTEXT, "Failed to store fallback tables", { error });
   }
+}
+
+function replaceFallbackTables(tables: TableInfo[]) {
+  writeFallbackTables(tables);
 }
 
 function loadFallbackTables(): TableInfo[] {
@@ -662,7 +708,7 @@ function loadFallbackTables(): TableInfo[] {
           raw: { tableName: name, type },
           columns: Array.isArray(item.columns)
             ? item.columns
-                .map((column) => {
+                .map((column: unknown) => {
                   if (!column || typeof column !== "object") {
                     return null;
                   }
@@ -689,8 +735,68 @@ function loadFallbackTables(): TableInfo[] {
 }
 
 function findFallbackTable(name: string): TableInfo | undefined {
-  return loadFallbackTables().find((table) => table.name === name);
+  const target = normalizeTableName(name);
+  return loadFallbackTables().find((table) => normalizeTableName(table.name) === target);
 }
+
+function removeFallbackTable(name: string) {
+  try {
+    const existing = loadFallbackTables();
+    const filtered = existing.filter(
+      (table) => normalizeTableName(table.name) !== normalizeTableName(name)
+    );
+    writeFallbackTables(filtered);
+  } catch (error) {
+    logWarning(KUZU_LOG_CONTEXT, "Failed to remove fallback table", { error, name });
+  }
+}
+
+export function applyDdlStatementToCache(statement: string) {
+  const statements = statement
+    .split(";")
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+
+  for (const part of statements) {
+    if (/^CREATE\s+(?:NODE|REL)\s+TABLE/i.test(part)) {
+      const name = extractTableName(part);
+      if (!name) {
+        continue;
+      }
+      const isRel = /^CREATE\s+REL\s+TABLE/i.test(part);
+      const table: TableInfo = {
+        name,
+        type: isRel ? "REL" : "NODE",
+        raw: { tableName: name, type: isRel ? "REL" : "NODE" },
+        columns: parseTableColumns(part),
+      };
+      storeFallbackTables([table]);
+      continue;
+    }
+
+    if (/^DROP\s+TABLE/i.test(part)) {
+      const name = extractTableName(part);
+      if (!name) {
+        continue;
+      }
+      removeFallbackTable(name);
+      continue;
+    }
+
+    if (/^ALTER\s+TABLE/i.test(part)) {
+      const name = extractTableName(part);
+      if (!name) {
+        continue;
+      }
+      removeFallbackTable(name);
+    }
+  }
+}
+
+export function getCachedTables(): TableInfo[] {
+  return loadFallbackTables();
+}
+
 
 function normalizePreviewRow(row: QueryRow): QueryRow {
   const normalized: QueryRow = {};
@@ -846,45 +952,50 @@ function extractCount(rows: QueryRow[]): number {
 
 
 async function runLabelQuery(conn: KuzuConnection): Promise<QueryResult> {
-  const result = await runQuery(
-    conn,
-    `MATCH (n)
-     WITH labels(n) AS labelsVec
-     WHERE labelsVec IS NOT NULL AND labelsVec <> []
-     RETURN DISTINCT labelsVec`
-  );
+  try {
+    const result = await runQuery(
+      conn,
+      `MATCH (n)
+       WITH labels(n) AS labelsVec
+       WHERE labelsVec IS NOT NULL AND labelsVec <> []
+       RETURN DISTINCT labelsVec`
+    );
 
-  if (!result.rows || result.rows.length === 0) {
-    return result;
-  }
+    if (!result.rows || result.rows.length === 0) {
+      return { columns: ["tableName"], rows: [] };
+    }
 
-  const rows: QueryRow[] = [];
-  for (const row of result.rows) {
-    const labelsVec = row.labelsVec ?? row["labelsVec"] ?? row["labels(n)"];
-    if (Array.isArray(labelsVec)) {
-      for (const label of labelsVec) {
-        const name = extractString(label);
+    const rows: QueryRow[] = [];
+    for (const row of result.rows) {
+      const labelsVec = row.labelsVec ?? row["labelsVec"] ?? row["labels(n)"];
+      if (Array.isArray(labelsVec)) {
+        for (const label of labelsVec) {
+          const name = extractString(label);
+          if (name) {
+            rows.push({ tableName: name });
+          }
+        }
+      } else {
+        const name = extractString(labelsVec);
         if (name) {
           rows.push({ tableName: name });
         }
       }
-    } else {
-      const name = extractString(labelsVec);
-      if (name) {
-        rows.push({ tableName: name });
+    }
+
+    const unique = new Map<string, QueryRow>();
+    for (const row of rows) {
+      const name = extractString(row.tableName);
+      if (name && !unique.has(name)) {
+        unique.set(name, { tableName: name });
       }
     }
-  }
 
-  const unique = new Map<string, QueryRow>();
-  for (const row of rows) {
-    const name = extractString(row.tableName);
-    if (name && !unique.has(name)) {
-      unique.set(name, { tableName: name });
-    }
+    return { columns: ["tableName"], rows: Array.from(unique.values()) };
+  } catch (error) {
+    logWarning(KUZU_LOG_CONTEXT, "runLabelQuery failed, returning empty result", { error });
+    return { columns: ["tableName"], rows: [] };
   }
-
-  return { columns: ["tableName"], rows: Array.from(unique.values()) };
 }
 
 async function removeStaleDatabaseFile(kuzu: KuzuModule) {

@@ -3,10 +3,12 @@
  * LangGraphを使用してAIとの対話を処理
  */
 
+import type { StructuredToolInterface } from "@langchain/core/tools";
 import { Message } from "../../types/chat";
 import { mcpClient } from "../mcp/client";
 import { logDebug, logError } from "../../utils/errorHandler";
 import { createChatWorkflow, LangGraphChatWorkflow } from "../langgraph/workflow";
+import { createKuzuMemoryTools } from "../langgraph/kuzuTools";
 
 const DEFAULT_MODEL = "gpt-4o";
 
@@ -33,6 +35,7 @@ export class OpenAIService {
   private maxTokens: number = 1000;
   private customEndpoint?: string;
   private workflow: LangGraphChatWorkflow | null = null;
+  private memoryTools: StructuredToolInterface[] | null = null;
 
   constructor(apiKey?: string, model: string = DEFAULT_MODEL) {
     // 引数 > localStorage > 環境変数の順で優先
@@ -80,6 +83,18 @@ export class OpenAIService {
     this.workflow = null; // エンドポイント変更時にワークフローをリセット
   }
 
+  private resolveTools(provider: "openai" | "gemini"): StructuredToolInterface[] | undefined {
+    if (provider !== "openai") {
+      return undefined;
+    }
+
+    if (!this.memoryTools) {
+      this.memoryTools = createKuzuMemoryTools();
+    }
+
+    return this.memoryTools;
+  }
+
   /**
    * LangGraphワークフローを初期化
    */
@@ -91,7 +106,8 @@ export class OpenAIService {
         model,
         this.temperature,
         this.maxTokens,
-        this.customEndpoint
+        this.customEndpoint,
+        this.resolveTools(provider)
       );
     }
   }
