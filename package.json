@@ -16,7 +16,8 @@
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css}\"",
     "check:quality": "npm run type-check && npm run lint && npm run format:check",
-    "check:quick": "npm run type-check && echo Quick check passed!"
+    "check:quick": "npm run type-check && echo Quick check passed!",
+    "kuzu:bootstrap": "node ./scripts/bootstrapKuzuWasm.mjs"
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
@@ -25,6 +26,7 @@
     "@langchain/langgraph": "^1.0.0",
     "@langchain/openai": "^1.0.0",
     "@tauri-apps/api": "^2.1.1",
+    "kuzu-wasm": "^0.11.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
