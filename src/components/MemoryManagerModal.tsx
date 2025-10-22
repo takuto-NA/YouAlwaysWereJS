@@ -258,18 +258,18 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/70 backdrop-blur-sm">
-      <div className="relative flex h-full w-full max-w-6xl flex-col overflow-hidden border border-gray-800 bg-black text-white shadow-2xl">
-        <header className="flex flex-shrink-0 items-center justify-between border-b border-gray-800 px-6 py-4">
-          <div className="flex items-center gap-3">
+      <div className="relative flex h-full w-full max-w-6xl flex-col overflow-hidden border border-gray-800 bg-black text-white shadow-2xl md:h-auto md:max-h-[90vh] md:rounded-2xl">
+        <header className="flex flex-shrink-0 flex-wrap items-center justify-between gap-3 border-b border-gray-800 px-4 py-4 md:flex-nowrap md:px-6">
+          <div className="flex min-w-0 items-center gap-3">
             <CircleStackIcon className="h-6 w-6 text-gray-400" />
-            <div>
-              <h2 className="text-lg font-semibold tracking-wide">Memory Manager</h2>
+            <div className="min-w-0">
+              <h2 className="truncate text-lg font-semibold tracking-wide">Memory Manager</h2>
               <p className="text-xs text-gray-500">
                 IndexedDB に保存された Kuzu グラフデータを確認・管理します
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex flex-1 items-center justify-end gap-3 md:flex-none">
             <button
               type="button"
               onClick={handleSeedDemo}
@@ -312,15 +312,15 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
           </div>
         )}
 
-        <div className="flex min-h-0 flex-1 divide-x divide-gray-900">
-          <aside className="w-64 flex-shrink-0 overflow-y-auto bg-black/60">
-            <div className="border-b border-gray-900 px-6 py-4">
+        <div className="flex min-h-0 flex-1 flex-col divide-y divide-gray-900 md:flex-row md:divide-y-0 md:divide-x">
+          <aside className="w-full flex-shrink-0 overflow-hidden bg-black/60 md:w-64 md:border-r md:border-gray-900">
+            <div className="border-b border-gray-900 px-4 py-3 md:px-6 md:py-4 md:border-b-0 md:border-gray-900 md:border-b">
               <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
                 Tables
               </h3>
             </div>
 
-            <div className="flex flex-col gap-1 px-3 py-4">
+            <div className="flex max-h-56 flex-col gap-1 overflow-y-auto px-3 py-4 md:max-h-none">
               {tablesState.loading && (
                 <p className="px-3 py-2 text-xs text-gray-500">Loading tables...</p>
               )}
@@ -357,8 +357,8 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
             </div>
           </aside>
 
-          <main className="flex min-h-0 flex-1 flex-col">
-            <div className="flex flex-col gap-6 overflow-y-auto px-6 py-6">
+          <main className="flex min-h-0 w-full flex-1 flex-col">
+            <div className="flex flex-1 flex-col gap-6 overflow-y-auto px-4 py-4 md:px-6 md:py-6">
               <section>
                 <header className="mb-3 flex items-center justify-between">
                   <div>
