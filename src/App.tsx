@@ -3,12 +3,13 @@
  * LangGraphとOpenAI APIを使用してMCP経由で対話
  */
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Cog6ToothIcon, SparklesIcon, RectangleStackIcon } from "@heroicons/react/24/outline";
+import { Cog6ToothIcon, SparklesIcon, RectangleStackIcon, CircleStackIcon } from "@heroicons/react/24/outline";
 import ChatMessage from "./components/ChatMessage";
 import ChatInput from "./components/ChatInput";
 import SettingsModal from "./components/SettingsModal";
 import PromptEditorModal from "./components/PromptEditorModal";
 import DisplaySettingsModal from "./components/DisplaySettingsModal";
+import MemoryManagerModal from "./components/MemoryManagerModal";
 import StartupSplash from "./components/StartupSplash";
 import { Message, ChatState } from "./types/chat";
 import { PromptSettings } from "./types/prompt";
@@ -27,6 +28,7 @@ function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isPromptEditorOpen, setIsPromptEditorOpen] = useState(false);
   const [isDisplaySettingsOpen, setIsDisplaySettingsOpen] = useState(false);
+  const [isMemoryManagerOpen, setIsMemoryManagerOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(loadSettings());
   const [promptSettings, setPromptSettings] = useState<PromptSettings>(loadPromptSettings());
   const [displaySettings, setDisplaySettings] = useState<DisplaySettings>(loadDisplaySettings());
@@ -305,37 +307,50 @@ function App() {
         onSave={handleDisplaySettingsSave}
       />
 
+      <MemoryManagerModal
+        isOpen={isMemoryManagerOpen}
+        onClose={() => setIsMemoryManagerOpen(false)}
+      />
+
       {/* ヘッダー - シンプルなSF風 */}
       <div className="bg-black border-b border-gray-800 px-6 py-3 flex items-center justify-between flex-shrink-0 animate-fadeIn">
         <div className="text-white text-lg font-light tracking-widest">AI INTERFACE</div>
         <div className="flex items-center gap-4">
           <button
+            onClick={() => setIsMemoryManagerOpen(true)}
+            className="text-gray-600 transition-all duration-300 hover:scale-110 hover:text-white"
+            aria-label="Open memory manager"
+            title="Memory Manager"
+          >
+            <CircleStackIcon className="h-6 w-6" />
+          </button>
+          <button
             onClick={() => setIsPromptEditorOpen(true)}
-            className="text-gray-600 hover:text-white transition-all duration-300 hover:scale-110"
-            aria-label="プロンプトエディタを開く"
+            className="text-gray-600 transition-all duration-300 hover:scale-110 hover:text-white"
+            aria-label="Open prompt editor"
             title="Prompt Editor"
           >
-            <SparklesIcon className="w-6 h-6" />
+            <SparklesIcon className="h-6 w-6" />
           </button>
           <button
             onClick={() => setIsDisplaySettingsOpen(true)}
-            className="text-gray-600 hover:text-white transition-all duration-300 hover:scale-110"
-            aria-label="表示設定を開く"
+            className="text-gray-600 transition-all duration-300 hover:scale-110 hover:text-white"
+            aria-label="Open display settings"
             title="Display Settings"
           >
-            <RectangleStackIcon className="w-6 h-6" />
+            <RectangleStackIcon className="h-6 w-6" />
           </button>
           <button
             onClick={() => setIsSettingsOpen(true)}
-            className="text-gray-600 hover:text-white transition-all duration-300 hover:scale-110"
-            aria-label="設定を開く"
+            className="text-gray-600 transition-all duration-300 hover:scale-110 hover:text-white"
+            aria-label="Open settings"
             title="Settings"
           >
-            <Cog6ToothIcon className="w-6 h-6" />
+            <Cog6ToothIcon className="h-6 w-6" />
           </button>
           <button
             onClick={handleClearHistory}
-            className="text-xs text-gray-600 hover:text-white transition-colors uppercase tracking-wider"
+            className="text-xs uppercase tracking-wider text-gray-600 transition-colors hover:text-white"
           >
             Clear
           </button>

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { KUZU_DEMO_FLAG, seedDemoData, loadKuzuModule } from "../services/kuzuClient";
 
-const KUZU_DEMO_FLAG = "kuzuDemoInitialized";
 const KUZU_DB_DIR = "/database";
 const KUZU_DB_PATH = `${KUZU_DB_DIR}/persistent.db`;
 
@@ -12,35 +12,6 @@ class RunAbortedError extends Error {
     this.name = "RunAbortedError";
   }
 }
-
-const CSV_SEED_DATA: Record<string, string> = {
-  "user.csv": `Adam,30
-Karissa,40
-Zhang,50
-Noura,25`,
-  "city.csv": `Waterloo,150000
-Kitchener,200000
-Guelph,75000`,
-  "follows.csv": `Adam,Karissa,2020
-Adam,Zhang,2020
-Karissa,Zhang,2021
-Zhang,Noura,2022`,
-  "lives-in.csv": `Adam,Waterloo
-Karissa,Waterloo
-Zhang,Kitchener
-Noura,Guelph`,
-};
-
-const FIRST_RUN_QUERIES = [
-  "CREATE NODE TABLE User(name STRING, age INT64, PRIMARY KEY (name))",
-  "CREATE NODE TABLE City(name STRING, population INT64, PRIMARY KEY (name))",
-  "CREATE REL TABLE Follows(FROM User TO User, since INT64)",
-  "CREATE REL TABLE LivesIn(FROM User TO City)",
-  "COPY User FROM 'user.csv'",
-  "COPY City FROM 'city.csv'",
-  "COPY Follows FROM 'follows.csv'",
-  "COPY LivesIn FROM 'lives-in.csv'",
-];
 
 export default function KuzuPersistentDemo() {
   const [logLines, setLogLines] = useState<string[]>([]);
@@ -74,12 +45,7 @@ export default function KuzuPersistentDemo() {
 
       try {
         checkAbort(abortSignal);
-        const moduleUrl = new URL("/kuzu-wasm/index.js", window.location.origin).href;
-        const module: any = await import(/* @vite-ignore */ moduleUrl);
-        const kuzu = module.default ?? module;
-        if (typeof kuzu.setWorkerPath === "function") {
-          kuzu.setWorkerPath("/kuzu-wasm/kuzu_wasm_worker.js");
-        }
+        const kuzu = await loadKuzuModule();
 
         checkAbort(abortSignal);
         const isFirstRun = window.localStorage.getItem(KUZU_DEMO_FLAG) !== "true";
@@ -90,7 +56,7 @@ export default function KuzuPersistentDemo() {
         );
 
         if (isFirstRun) {
-          await seedDatabase(kuzu, appendLog, abortSignal);
+          await seedDemoData({ kuzuInstance: kuzu, signal: abortSignal, onLog: appendLog });
           if (!cancelled) {
             window.localStorage.setItem(KUZU_DEMO_FLAG, "true");
             setLastRunMode("first-run");
@@ -111,7 +77,7 @@ export default function KuzuPersistentDemo() {
               appendLog(
                 "Existing database is missing expected tables. Recreating schema and re-running queries..."
               );
-              await seedDatabase(kuzu, appendLog, abortSignal);
+              await seedDemoData({ kuzuInstance: kuzu, signal: abortSignal, onLog: appendLog });
               if (!cancelled) {
                 window.localStorage.setItem(KUZU_DEMO_FLAG, "true");
                 setLastRunMode("first-run");
@@ -272,76 +238,6 @@ export default function KuzuPersistentDemo() {
   );
 }
 
-async function seedDatabase(
-  kuzu: any,
-  appendLog: (line: string) => void,
-  signal?: AbortSignal
-) {
-  checkAbort(signal);
-  appendLog("Writing CSV seed files into the in-memory FS...");
-  for (const [filename, csv] of Object.entries(CSV_SEED_DATA)) {
-    checkAbort(signal);
-    await kuzu.FS.writeFile(`/${filename}`, csv);
-    checkAbort(signal);
-    appendLog(`- ${filename} written (${csv.split("\n").length} rows)`);
-  }
-
-  checkAbort(signal);
-  appendLog(`Preparing mount point ${KUZU_DB_DIR}...`);
-  await ensureDirectory(kuzu, KUZU_DB_DIR);
-  await remountIdbfs(kuzu, KUZU_DB_DIR, appendLog, signal);
-  appendLog("Mounted. Creating database and executing setup queries...");
-
-  let db: any | null = null;
-  let conn: any | null = null;
-
-  try {
-    checkAbort(signal);
-    await removeStaleDatabaseFile(kuzu);
-    checkAbort(signal);
-
-    db = new kuzu.Database(KUZU_DB_PATH);
-    conn = new kuzu.Connection(db);
-
-    for (const query of FIRST_RUN_QUERIES) {
-      checkAbort(signal);
-      appendLog(`Executing: ${query}`);
-      const queryResult = await conn.query(query);
-      checkAbort(signal);
-      const text = await queryResult.toString();
-      if (text.trim()) {
-        appendLog(text.trim());
-      }
-      await queryResult.close();
-    }
-  } finally {
-    if (conn) {
-      try {
-        await conn.close();
-      } catch (error) {
-        console.warn("[KuzuPersistentDemo] Failed to close connection during seed", error);
-      }
-    }
-    if (db) {
-      try {
-        await db.close();
-      } catch (error) {
-        console.warn("[KuzuPersistentDemo] Failed to close database during seed", error);
-      }
-    }
-    try {
-      await kuzu.FS.syncfs(false);
-    } catch (error) {
-      console.warn("[KuzuPersistentDemo] Failed to sync filesystem during seed", error);
-    }
-    await safeUnmount(kuzu, KUZU_DB_DIR, appendLog, false, "Unmounted persistent mount", signal);
-  }
-
-  if (!signal?.aborted) {
-    appendLog("Database persisted to IndexedDB.");
-  }
-}
-
 async function queryDatabase(
   kuzu: any,
   appendLog: (line: string) => void,
@@ -417,17 +313,6 @@ async function ensureDirectory(kuzu: any, path: string) {
       message.includes("File exists") || code === "EEXIST" || errno === 17 || errno === -17 || errno === 20;
 
     if (!knownExists) {
-      throw error;
-    }
-  }
-}
-
-async function removeStaleDatabaseFile(kuzu: any) {
-  try {
-    await kuzu.FS.unlink(KUZU_DB_PATH);
-  } catch (error: any) {
-    const message = typeof error?.message === "string" ? error.message : "";
-    if (!message.includes("No such file") && !(error?.code === "ENOENT")) {
       throw error;
     }
   }
