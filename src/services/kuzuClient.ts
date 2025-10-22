@@ -2,6 +2,7 @@ const KUZU_DB_DIR = "/database";
 const KUZU_DB_PATH = `${KUZU_DB_DIR}/persistent.db`;
 const KUZU_WORKER_PATH = "/kuzu-wasm/kuzu_wasm_worker.js";
 const KUZU_MODULE_PATH = "/kuzu-wasm/index.js";
+const BASE_PATH = import.meta.env?.BASE_URL ?? "/";
 
 export const KUZU_DEMO_FLAG = "kuzuDemoInitialized";
 const KUZU_FALLBACK_TABLES_KEY = "kuzuFallbackTables";
@@ -77,15 +78,24 @@ function ensureBrowserEnvironment() {
   }
 }
 
+function resolveAssetUrl(relativePath: string): string {
+  const normalized = relativePath.startsWith("/") ? relativePath.slice(1) : relativePath;
+  const base = BASE_PATH.endsWith("/") ? BASE_PATH : `${BASE_PATH}/`;
+  if (typeof window === "undefined") {
+    return `${base}${normalized}`;
+  }
+  return new URL(`${base}${normalized}`, window.location.origin).href;
+}
+
 export async function loadKuzuModule(): Promise<any> {
   ensureBrowserEnvironment();
   if (!kuzuModulePromise) {
     kuzuModulePromise = (async () => {
-      const moduleUrl = new URL(KUZU_MODULE_PATH, window.location.origin).href;
+      const moduleUrl = resolveAssetUrl(KUZU_MODULE_PATH);
       const module: any = await import(/* @vite-ignore */ moduleUrl);
       const kuzu = module.default ?? module;
       if (typeof kuzu.setWorkerPath === "function") {
-        kuzu.setWorkerPath(KUZU_WORKER_PATH);
+        kuzu.setWorkerPath(resolveAssetUrl(KUZU_WORKER_PATH));
       }
       return kuzu;
     })();
