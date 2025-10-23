@@ -212,6 +212,7 @@ export async function runWithConnection<T>(task: (ctx: KuzuExecutionContext) => 
 export interface NormalizedCypherStatement {
   statement: string;
   didRewrite: boolean;
+  autoMemoryIdPlaceholders?: number;
 }
 
 export async function executeQuery(
@@ -228,13 +229,67 @@ export async function executeQuery(
         normalized: normalization.statement,
       });
     }
-    return runQuery(conn, normalization.statement);
+
+    let statementToRun = normalization.statement;
+    if (!options.skipNormalization && (normalization.autoMemoryIdPlaceholders ?? 0) > 0) {
+      statementToRun = await injectAutoMemoryIds(
+        conn,
+        normalization.statement,
+        normalization.autoMemoryIdPlaceholders ?? 0
+      );
+    }
+
+    return runQuery(conn, statementToRun);
   });
+}
+
+async function injectAutoMemoryIds(
+  conn: KuzuConnection,
+  statement: string,
+  placeholderCount: number
+): Promise<string> {
+  if (placeholderCount <= 0) {
+    return statement;
+  }
+
+  const result = await runQuery(
+    conn,
+    "MATCH (m:Memory) RETURN COALESCE(MAX(m.id), 0) AS maxId"
+  );
+
+  const firstRow = result.rows[0] ?? {};
+  const rawValue =
+    typeof firstRow.maxId === "number"
+      ? firstRow.maxId
+      : typeof firstRow.maxId === "string"
+      ? Number(firstRow.maxId)
+      : Number(firstRow[Object.keys(firstRow)[0] ?? ""] ?? 0);
+
+  const baseMax = Number.isFinite(rawValue) ? Number(rawValue) : 0;
+  let nextId = baseMax + 1;
+  let replacements = 0;
+
+  const rewritten = statement.replace(/__AUTO_MEMORY_ID__/g, () => {
+    replacements += 1;
+    const value = nextId;
+    nextId += 1;
+    return String(value);
+  });
+
+  if (replacements !== placeholderCount) {
+    logDebug(KUZU_LOG_CONTEXT, "Auto memory id placeholder mismatch", {
+      expected: placeholderCount,
+      actual: replacements,
+    });
+  }
+
+  return rewritten;
 }
 
 export function normalizeCypherStatement(statement: string): NormalizedCypherStatement {
   const { masked, literals } = maskStringLiterals(statement);
   let didRewrite = false;
+  let autoMemoryIdPlaceholders = 0;
 
   let transformed = masked.replace(/\bDATETIME\s*\(\s*([^)]*?)\s*\)/gi, (_match, arg) => {
     didRewrite = true;
@@ -269,16 +324,54 @@ export function normalizeCypherStatement(statement: string): NormalizedCypherSta
     return "TIMESTAMP";
   });
 
+  const MEMORY_CREATE_REGEX =
+    /CREATE\s*\(\s*(?<alias>[A-Za-z_][\w]*)?\s*(?::\s*(?<labels>[A-Za-z_][\w]*(?:\s*:\s*[A-Za-z_][\w]*)*))\s*\{(?<props>[\s\S]*?)\}\s*\)/gi;
+
+  transformed = transformed.replace(
+    MEMORY_CREATE_REGEX,
+    (fullMatch, _alias, labels: string | undefined, props: string | undefined) => {
+      const labelList =
+        labels
+          ?.split(":")
+          .map((label) => label.trim().toLowerCase())
+          .filter((label) => label.length > 0) ?? [];
+
+      if (!labelList.includes("memory")) {
+        return fullMatch;
+      }
+
+      const propertyBlock = props ?? "";
+      if (/\bid\s*:/.test(propertyBlock)) {
+        return fullMatch;
+      }
+
+      didRewrite = true;
+      autoMemoryIdPlaceholders += 1;
+
+      const beforeProps = fullMatch.slice(0, fullMatch.indexOf("{") + 1);
+      const afterProps = fullMatch.slice(fullMatch.lastIndexOf("}"));
+      const trimmedProps = propertyBlock.trim();
+      const newProps =
+        trimmedProps.length > 0
+          ? `id: __AUTO_MEMORY_ID__, ${trimmedProps}`
+          : "id: __AUTO_MEMORY_ID__";
+
+      return `${beforeProps}${newProps}${afterProps}`;
+    }
+  );
+
   const restored = restoreStringLiterals(transformed, literals);
   if (restored === statement) {
     return {
       statement,
       didRewrite: false,
+      autoMemoryIdPlaceholders,
     };
   }
   return {
     statement: restored,
     didRewrite,
+    autoMemoryIdPlaceholders,
   };
 }
 
