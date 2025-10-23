@@ -47,8 +47,8 @@ function App() {
       id: "system-1",
       role: "system",
       content: hasKey
-        ? "システム起動完了。OpenAI API経由でMCPを使用した対話が可能です。"
-        : "WARNING: OpenAI APIキーが設定されていません。右上の設定ボタンから設定してください。",
+        ? "システム起動完了。OpenAI互換API経由でMCPを使用した対話が可能です。"
+        : "WARNING: OpenAI/Groq APIキーが設定されていません。右上の設定ボタンから設定してください。",
       timestamp: Date.now(),
       isTyping: false,
     };
@@ -131,7 +131,7 @@ function App() {
     // APIキーチェック（プロバイダーに応じて）
     const currentApiKey =
       settings.aiProvider === "openai" ? settings.openaiApiKey : settings.geminiApiKey;
-    const providerName = settings.aiProvider === "openai" ? "OpenAI" : "Gemini";
+    const providerName = settings.aiProvider === "openai" ? "OpenAI/Groq" : "Gemini";
 
     if (!currentApiKey) {
       const errorMessage: Message = {
@@ -169,7 +169,7 @@ function App() {
     }));
 
     try {
-      logDebug("Chat", "OpenAI APIにリクエスト送信中", {
+      logDebug("Chat", "OpenAI互換APIにリクエスト送信中", {
         messageCount: chatState.messages.length + 1,
       });
 

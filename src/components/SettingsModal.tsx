@@ -19,6 +19,63 @@ interface SettingsModalProps {
   onSave: (settings: AppSettings) => void;
 }
 
+type ModelPreset = {
+  value: string;
+  label: string;
+  group: string;
+  description?: string;
+  supportsReasoningToggle?: boolean;
+};
+
+const MODEL_PRESETS: ModelPreset[] = [
+  {
+    value: "groq/compound",
+    label: "groq/compound — Groq Compound (balanced default)",
+    group: "Groq",
+    description: "Great all-rounder on Groq with fast responses and high quality.",
+  },
+  {
+    value: "groq/compound-mini",
+    label: "groq/compound-mini — Groq Compound Mini (fastest)",
+    group: "Groq",
+    description: "Ultra-fast Groq model with lower cost for quick iterations.",
+  },
+  {
+    value: "openai/gpt-oss-120b",
+    label: "openai/gpt-oss-120b — GPT-OSS 120B",
+    group: "OpenAI OSS",
+    description: "OpenAI’s flagship open-weight model with GPT-5 level reasoning.",
+  },
+  {
+    value: "openai/gpt-oss-20b",
+    label: "openai/gpt-oss-20b — GPT-OSS 20B",
+    group: "OpenAI OSS",
+    description: "Lightweight GPT-OSS variant ideal for prototyping.",
+  },
+  {
+    value: "qwen/qwen3-32b",
+    label: "qwen/qwen3-32b — Qwen 3 32B",
+    group: "Qwen",
+    description: "Alibaba Qwen model; reasoning mode available via toggle below.",
+    supportsReasoningToggle: true,
+  },
+  {
+    value: "moonshotai/kimi-k2-instruct-090",
+    label: "moonshotai/kimi-k2-instruct-090 — Kimi K2 Instruct",
+    group: "Moonshot",
+    description: "Strong multilingual instruction model with wide context window.",
+  },
+  {
+    value: "meta-llama/llama-4-scout-17b-16e-instruct",
+    label: "meta-llama/llama-4-scout-17b-16e-instruct — Llama 4 Scout",
+    group: "Meta Llama",
+    description: "Meta’s latest Llama scouting model tuned for tool-use readiness.",
+  },
+];
+
+const QWEN_BASE_MODEL = "qwen/qwen3-32b";
+const QWEN_REASONING_SUFFIX = "-reasoning";
+
 function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
   const [settings, setSettings] = useState<AppSettings>(loadSettings());
   const [originalSettings, setOriginalSettings] = useState<AppSettings>(loadSettings());
@@ -27,6 +84,27 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const { isSaving, saveMessage, executeSave, resetSaveMessage } = useSaveState({ onClose });
+
+  const normalizedModelValue = settings.openaiModel.trim();
+  const qwenReasoningEnabled =
+    normalizedModelValue === `${QWEN_BASE_MODEL}${QWEN_REASONING_SUFFIX}`;
+  const isQwenPresetSelected =
+    normalizedModelValue === QWEN_BASE_MODEL || qwenReasoningEnabled;
+  const normalizedPresetValue = isQwenPresetSelected ? QWEN_BASE_MODEL : normalizedModelValue;
+  const presetSelectValue = MODEL_PRESETS.some((preset) => preset.value === normalizedPresetValue)
+    ? normalizedPresetValue
+    : "";
+  const selectedPreset = MODEL_PRESETS.find((preset) => preset.value === normalizedPresetValue);
+  const groupedModelPresets = MODEL_PRESETS.reduce<Record<string, ModelPreset[]>>(
+    (groups, preset) => {
+      if (!groups[preset.group]) {
+        groups[preset.group] = [];
+      }
+      groups[preset.group].push(preset);
+      return groups;
+    },
+    {}
+  );
 
   // 設定が変更されたかどうかを確認
   const hasUnsavedChanges = useCallback(() => {
@@ -152,6 +230,39 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
     handleClose();
   };
 
+  const handleModelPresetChange = (value: string) => {
+    if (!value) {
+      return;
+    }
+
+    setSettings((prev) => {
+      if (value === QWEN_BASE_MODEL) {
+        const wasReasoning =
+          prev.openaiModel === `${QWEN_BASE_MODEL}${QWEN_REASONING_SUFFIX}`;
+        return {
+          ...prev,
+          openaiModel: wasReasoning
+            ? `${QWEN_BASE_MODEL}${QWEN_REASONING_SUFFIX}`
+            : QWEN_BASE_MODEL,
+        };
+      }
+
+      return {
+        ...prev,
+        openaiModel: value,
+      };
+    });
+  };
+
+  const handleQwenReasoningToggle = (enabled: boolean) => {
+    setSettings((prev) => ({
+      ...prev,
+      openaiModel: enabled
+        ? `${QWEN_BASE_MODEL}${QWEN_REASONING_SUFFIX}`
+        : QWEN_BASE_MODEL,
+    }));
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -239,7 +350,7 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
               htmlFor="ai-provider-select"
               className="text-white font-light uppercase tracking-wider text-sm block"
             >
-              AI Provider
+              API Provider
             </label>
             <select
               id="ai-provider-select"
@@ -249,10 +360,12 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
               }
               className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
             >
-              <option value="openai">OpenAI</option>
+              <option value="openai">OpenAI-Compatible (OpenAI / Groq / OSS)</option>
               <option value="gemini">Google Gemini</option>
             </select>
-            <p className="text-xs text-gray-600">Choose your preferred AI provider</p>
+            <p className="text-xs text-gray-600">
+              OpenAI-Compatible covers OpenAI, Groq, Moonshot, QwenなどのOpenAI API互換プロバイダー
+            </p>
           </div>
 
           {/* OpenAI API設定 */}
@@ -264,7 +377,7 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                     htmlFor="openai-api-key"
                     className="text-white font-light uppercase tracking-wider text-sm"
                   >
-                    OpenAI API Key
+                    OpenAI-Compatible API Key
                   </label>
                   <span className="text-xs text-gray-600 uppercase">(Required)</span>
                 </div>
@@ -288,7 +401,7 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                   </button>
                 </div>
                 <p className="text-xs text-gray-600">
-                  Get your key from{" "}
+                  OpenAIは{" "}
                   <a
                     href="https://platform.openai.com/api-keys"
                     target="_blank"
@@ -296,6 +409,15 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                     className="text-gray-400 hover:text-white transition-colors duration-200 underline decoration-gray-700 hover:decoration-white"
                   >
                     platform.openai.com
+                  </a>{" "}
+                  / Groqは{" "}
+                  <a
+                    href="https://console.groq.com/keys"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-gray-400 hover:text-white transition-colors duration-200 underline decoration-gray-700 hover:decoration-white"
+                  >
+                    console.groq.com/keys
                   </a>
                 </p>
               </div>
@@ -306,37 +428,69 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                   htmlFor="openai-model-select"
                   className="text-white font-light uppercase tracking-wider text-sm block"
                 >
-                  OpenAI Model Selection (Preset)
+                  Groq-First Model Presets
                 </label>
                 <select
                   id="openai-model-select"
-                  value={settings.openaiModel}
-                  onChange={(e) => setSettings({ ...settings, openaiModel: e.target.value })}
+                  value={presetSelectValue}
+                  onChange={(e) => handleModelPresetChange(e.target.value)}
                   className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
                 >
-                  <optgroup label="GPT-5シリーズ（最新）">
-                    <option value="gpt-5">GPT-5 ⭐ (最新・推奨)</option>
-                    <option value="gpt-5-mini">GPT-5-mini (高速・効率的)</option>
-                    <option value="gpt-5-nano">GPT-5-nano (超軽量)</option>
-                    <option value="gpt-5-pro">GPT-5-pro (最高性能)</option>
-                    <option value="gpt-5-thinking">GPT-5-thinking (深い推論)</option>
-                  </optgroup>
-                  <optgroup label="推論特化（o1シリーズ）">
-                    <option value="o1">o1 (高度な推論)</option>
-                    <option value="o1-mini">o1-mini (推論・低コスト)</option>
-                  </optgroup>
-                  <optgroup label="GPT-4シリーズ">
-                    <option value="gpt-4o">GPT-4o</option>
-                    <option value="gpt-4o-mini">GPT-4o-mini</option>
-                    <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                  </optgroup>
-                  <optgroup label="その他">
-                    <option value="gpt-3.5-turbo">GPT-3.5 Turbo (低コスト)</option>
-                  </optgroup>
+                  <option value="" disabled>
+                    Select a recommended preset
+                  </option>
+                  {Object.entries(groupedModelPresets).map(([group, presets]) => (
+                    <optgroup key={group} label={group}>
+                      {presets.map((preset) => (
+                        <option key={preset.value} value={preset.value}>
+                          {preset.label}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
                 </select>
                 <p className="text-xs text-gray-600">
-                  プリセットから選択、または下のフィールドでカスタムモデル名を入力
+                  OpenAI API互換プロバイダー（Groq, OpenAI, Moonshot, Qwen, Metaなど）の推奨モデルプリセットです。
                 </p>
+                {selectedPreset?.description && (
+                  <div className="bg-gray-900/30 border border-gray-800 px-3 py-2 text-xs text-gray-400">
+                    {selectedPreset.description}
+                  </div>
+                )}
+                {isQwenPresetSelected && (
+                  <div className="bg-gray-900 border border-gray-800 rounded-md px-4 py-3 space-y-2">
+                    <div className="flex items-center justify-between gap-6">
+                      <div>
+                        <p className="text-white text-sm font-light uppercase tracking-wider">
+                          Qwen Reasoning Mode
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          必要に応じて <code className="bg-black/60 px-1">{QWEN_REASONING_SUFFIX}</code> を付与し、長考モードをON/OFFできます。
+                        </p>
+                      </div>
+                      <label
+                        htmlFor="qwen-reasoning-toggle"
+                        className="flex items-center gap-2 text-xs uppercase tracking-wider text-gray-400 cursor-pointer select-none"
+                      >
+                        <span>{qwenReasoningEnabled ? "Enabled" : "Disabled"}</span>
+                        <input
+                          id="qwen-reasoning-toggle"
+                          type="checkbox"
+                          checked={qwenReasoningEnabled}
+                          onChange={(e) => handleQwenReasoningToggle(e.target.checked)}
+                          className="w-5 h-5 accent-gray-400 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-black"
+                        />
+                      </label>
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Reasoningを有効化するとモデル名が{" "}
+                      <code className="bg-black/60 px-1">
+                        {`${QWEN_BASE_MODEL}${QWEN_REASONING_SUFFIX}`}
+                      </code>{" "}
+                      に切り替わります。
+                    </p>
+                  </div>
+                )}
               </div>
 
               {/* カスタムモデル名入力（LM Studio等） */}
@@ -352,11 +506,11 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                   type="text"
                   value={settings.openaiModel}
                   onChange={(e) => setSettings({ ...settings, openaiModel: e.target.value })}
-                  placeholder="例: llama-3.2-3b-instruct, mistral-7b-instruct"
+                  placeholder="例: groq/compound, openai/gpt-oss-20b"
                   className="w-full bg-black border border-gray-700 text-white px-4 py-3 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200 font-mono"
                 />
                 <p className="text-xs text-gray-600">
-                  LM Studioやカスタムエンドポイントで使用するモデル名を直接入力できます。
+                  GroqなどOpenAI互換APIで使う任意のモデルパスを直接入力できます（provider/model形式）。
                 </p>
               </div>
 

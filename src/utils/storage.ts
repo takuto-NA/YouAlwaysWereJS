@@ -57,7 +57,7 @@ export interface AppSettings {
 const DEFAULT_SETTINGS: AppSettings = {
   aiProvider: "openai",
   openaiApiKey: "",
-  openaiModel: "gpt-4o",
+  openaiModel: "groq/compound",
   geminiApiKey: "",
   geminiModel: "gemini-2.5-flash",
   typewriterSpeed: DEFAULT_TYPEWRITER_SPEED_MS,
