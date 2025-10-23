@@ -11,6 +11,7 @@ import {
   quoteIdentifier,
   applyDdlStatementToCache,
   getCachedTables,
+  normalizeCypherStatement,
 } from "../kuzuClient";
 import { logDebug, logError } from "../../utils/errorHandler";
 
@@ -44,11 +45,19 @@ export function createKuzuMemoryTools(): StructuredToolInterface[] {
 
       logDebug("KuzuTools", "Executing kuzu_query", { statement: trimmed });
 
+      const normalization = normalizeCypherStatement(trimmed);
+      if (normalization.didRewrite) {
+        logDebug("KuzuTools", "Rewrote unsupported syntax before execution", {
+          original: trimmed,
+          normalized: normalization.statement,
+        });
+      }
+
       try {
-        const result = await executeQuery(trimmed);
+        const result = await executeQuery(normalization.statement, { skipNormalization: true });
         const columnSummary = result.columns;
         const rowCount = result.rows.length;
-        applyDdlStatementToCache(trimmed);
+        applyDdlStatementToCache(normalization.statement);
         const payload = summarizeOnly
           ? {
               rowCount,
@@ -61,7 +70,10 @@ export function createKuzuMemoryTools(): StructuredToolInterface[] {
             };
         return serializeResult("kuzu_query_result", payload);
       } catch (error) {
-        logError("KuzuTools", error, { statement: trimmed });
+        logError("KuzuTools", error, {
+          statement: trimmed,
+          normalizedStatement: normalization.statement,
+        });
         const interpreted = interpretKuzuError(error, trimmed);
         return serializeResult("kuzu_query_error", {
           message: interpreted.message,
@@ -186,13 +198,22 @@ export function createKuzuMemoryTools(): StructuredToolInterface[] {
   return [queryTool, listTablesTool, describeTableTool];
 }
 
-function interpretKuzuError(error: unknown, statement: string): { message: string; hint?: string } {
+function interpretKuzuError(error: unknown, _statement: string): { message: string; hint?: string } {
   const baseMessage = error instanceof Error ? error.message : String(error);
   let hint: string | undefined;
 
   if (baseMessage.includes("mismatched input 'REL'") || baseMessage.includes("mismatched input 'RELATION'")) {
     hint =
       "Kuzu expects `DROP TABLE <name>` for both node and relationship tables. Try rerunning with `DROP TABLE Follows;` etc.";
+  } else if (baseMessage.includes("function DATETIME does not exist")) {
+    hint =
+      "KuzuDB does not support a `DATETIME()` function. Use `CURRENT_TIMESTAMP` or `CAST(<value> AS TIMESTAMP)` and declare columns as `TIMESTAMP`.";
+  } else if (baseMessage.toLowerCase().includes("expects primary key")) {
+    hint =
+      "Provide a unique `id` value when creating Memory nodes (e.g. `CREATE (m:Memory {id: <nextId>, ...})`). Use `MATCH (m:Memory) RETURN MAX(m.id)` to choose the next identifier.";
+  } else if (baseMessage.toLowerCase().includes("duplicated primary key value")) {
+    hint =
+      "The chosen `id` already exists. Query the current max id (e.g. `MATCH (m:Memory) RETURN MAX(m.id)`), then retry with a higher value.";
   } else if (baseMessage.includes("Cannot delete node table") && baseMessage.includes("referenced by relationship table")) {
     hint =
       "Delete or drop relationship tables (e.g. `DROP TABLE Follows;`) before removing the referenced node table.";

@@ -209,9 +209,99 @@ export async function runWithConnection<T>(task: (ctx: KuzuExecutionContext) => 
   return resultPromise;
 }
 
-export async function executeQuery(sql: string): Promise<QueryResult> {
+export interface NormalizedCypherStatement {
+  statement: string;
+  didRewrite: boolean;
+}
+
+export async function executeQuery(
+  sql: string,
+  options: { skipNormalization?: boolean } = {}
+): Promise<QueryResult> {
   return runWithConnection(async ({ conn }) => {
-    return runQuery(conn, sql);
+    const normalization = options.skipNormalization
+      ? { statement: sql, didRewrite: false }
+      : normalizeCypherStatement(sql);
+    if (normalization.didRewrite) {
+      logDebug(KUZU_LOG_CONTEXT, "Normalized Cypher statement for Kuzu compatibility", {
+        original: sql,
+        normalized: normalization.statement,
+      });
+    }
+    return runQuery(conn, normalization.statement);
+  });
+}
+
+export function normalizeCypherStatement(statement: string): NormalizedCypherStatement {
+  const { masked, literals } = maskStringLiterals(statement);
+  let didRewrite = false;
+
+  let transformed = masked.replace(/\bDATETIME\s*\(\s*([^)]*?)\s*\)/gi, (_match, arg) => {
+    didRewrite = true;
+    const trimmedArg = typeof arg === "string" ? arg.trim() : "";
+    if (trimmedArg.length === 0) {
+      return "CURRENT_TIMESTAMP()";
+    }
+
+    const literalMatch = /^__KUZU_LITERAL_(\d+)__$/.exec(trimmedArg);
+    if (literalMatch) {
+      const literalIndex = Number.parseInt(literalMatch[1], 10);
+      if (!Number.isNaN(literalIndex) && literalIndex >= 0 && literalIndex < literals.length) {
+        const literalValue = literals[literalIndex];
+        const unquoted = literalValue.replace(/^['"`]/, "").replace(/['"`]$/, "");
+        const keyword = unquoted.trim().toLowerCase();
+        if (keyword.length === 0) {
+          return "CURRENT_TIMESTAMP()";
+        }
+        if (keyword === "now" || keyword === "current_timestamp") {
+          return "CURRENT_TIMESTAMP()";
+        }
+      }
+    } else if (/^(now|current_timestamp)$/i.test(trimmedArg)) {
+      return "CURRENT_TIMESTAMP()";
+    }
+
+    return `CAST(${trimmedArg} AS TIMESTAMP)`;
+  });
+
+  transformed = transformed.replace(/\bDATETIME\b/gi, () => {
+    didRewrite = true;
+    return "TIMESTAMP";
+  });
+
+  const restored = restoreStringLiterals(transformed, literals);
+  if (restored === statement) {
+    return {
+      statement,
+      didRewrite: false,
+    };
+  }
+  return {
+    statement: restored,
+    didRewrite,
+  };
+}
+
+function maskStringLiterals(sql: string): { masked: string; literals: string[] } {
+  const literals: string[] = [];
+  const masked = sql.replace(
+    /'([^']|'')*'|"([^"]|"")*"|`([^`]|``)*`/g,
+    (match: string) => {
+      const token = `__KUZU_LITERAL_${literals.length}__`;
+      literals.push(match);
+      return token;
+    }
+  );
+  return { masked, literals };
+}
+
+function restoreStringLiterals(masked: string, literals: string[]): string {
+  return masked.replace(/__KUZU_LITERAL_(\d+)__/g, (match, indexString: string) => {
+    const index = Number.parseInt(indexString, 10);
+    if (Number.isNaN(index) || index < 0 || index >= literals.length) {
+      return match;
+    }
+    return literals[index];
   });
 }
 
