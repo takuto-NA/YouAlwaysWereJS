@@ -1,15 +1,41 @@
 /**
- * ローカルストレージを使用した設定の永続化
- * セキュアな方法でAPIキーなどを保存
+ * Provides typed wrappers around localStorage for application, prompt, and display settings.
+ * Why it matters: centralised persistence keeps side effects consistent and logging rich, making
+ * quota issues or corrupt JSON easy to diagnose without scattering storage logic.
  */
-import { DEFAULT_TYPEWRITER_SPEED_MS } from "../constants/typewriter";
-import { PromptSettings } from "../types/prompt";
 import { DEFAULT_PROMPT_SETTINGS } from "../constants/prompts";
-import { DisplayMode, DisplaySettings } from "../types/game";
+import { DEFAULT_TYPEWRITER_SPEED_MS } from "../constants/typewriter";
+import { DisplaySettings } from "../types/game";
+import { PromptSettings } from "../types/prompt";
+import { getErrorMessage, logError, logWarning } from "./errorHandler";
 
 const STORAGE_KEY = "chat_app_settings";
 const PROMPT_STORAGE_KEY = "chat_app_prompts";
 const DISPLAY_STORAGE_KEY = "chat_app_display";
+
+const SETTINGS_CONTEXT = "AppSettingsStorage";
+const PROMPT_CONTEXT = "PromptSettingsStorage";
+const DISPLAY_CONTEXT = "DisplaySettingsStorage";
+
+const QUOTA_EXCEEDED_ERROR_NAME = "QuotaExceededError";
+const STORAGE_QUOTA_ERROR_MESSAGE =
+  "Storage quota exceeded. Clear your browser storage and try again.";
+const PROMPT_QUOTA_ERROR_MESSAGE =
+  "Prompt storage quota exceeded. Remove large prompts or clear browser storage.";
+
+const SETTINGS_SAVE_FAILURE = "Failed to save settings";
+const SETTINGS_RESET_FAILURE = "Failed to reset settings";
+const SETTINGS_IMPORT_FAILURE = "Failed to import settings";
+const PROMPT_SAVE_FAILURE = "Failed to save prompt settings";
+const DISPLAY_SAVE_FAILURE = "Failed to save display settings";
+
+const INVALID_SETTINGS_WARNING = "Invalid settings payload detected; using defaults.";
+const INVALID_PROMPT_WARNING = "Invalid prompt payload detected; using defaults.";
+const CORRUPT_SETTINGS_WARNING = "Stored settings JSON was corrupt. Clearing entry.";
+const CORRUPT_PROMPT_WARNING = "Stored prompt settings JSON was corrupt. Clearing entry.";
+
+const DEFAULT_TEMPERATURE = 0.7;
+const DEFAULT_MAX_TOKENS = 4000;
 
 export type AIProvider = "openai" | "gemini";
 
@@ -17,7 +43,7 @@ export interface AppSettings {
   aiProvider: AIProvider;
   openaiApiKey: string;
   openaiModel: string;
-  customOpenAIEndpoint?: string; // LM Studio等のカスタムエンドポイント（オプション）
+  customOpenAIEndpoint?: string;
   geminiApiKey: string;
   geminiModel: string;
   typewriterSpeed: number;
@@ -38,207 +64,116 @@ const DEFAULT_SETTINGS: AppSettings = {
   mcpEndpoint: "ws://localhost:8080",
   theme: "dark",
   autoScroll: true,
-  temperature: 0.7,
-  maxTokens: 4000, // 長い応答に対応するため増やす
+  temperature: DEFAULT_TEMPERATURE,
+  maxTokens: DEFAULT_MAX_TOKENS,
 };
 
-/**
- * 設定をローカルストレージに保存
- */
 export function saveSettings(settings: Partial<AppSettings>): void {
   try {
     const currentSettings = loadSettings();
-    const newSettings = { ...currentSettings, ...settings };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newSettings));
+    const mergedSettings = { ...currentSettings, ...settings };
+    writeJson(STORAGE_KEY, mergedSettings, {
+      context: SETTINGS_CONTEXT,
+      quotaMessage: STORAGE_QUOTA_ERROR_MESSAGE,
+      failureMessage: SETTINGS_SAVE_FAILURE,
+    });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error("設定の保存に失敗しました:", errorMessage);
-    
-    // QuotaExceededError の場合は具体的なメッセージを提供
-    if (error instanceof DOMException && error.name === "QuotaExceededError") {
-      throw new Error(
-        "ストレージの容量制限に達しました。ブラウザのキャッシュをクリアしてください。"
-      );
+    if (error instanceof Error) {
+      throw error;
     }
-    
-    throw new Error(`設定の保存に失敗しました: ${errorMessage}`);
+    throw new Error(`${SETTINGS_SAVE_FAILURE}: ${getErrorMessage(error)}`);
   }
 }
 
-/**
- * 設定をローカルストレージから読み込み
- */
 export function loadSettings(): AppSettings {
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (!stored) {
-      return DEFAULT_SETTINGS;
-    }
-    const parsed = JSON.parse(stored);
-    
-    // 保存されたデータの妥当性を検証
-    if (typeof parsed !== "object" || parsed === null) {
-      console.warn("無効な設定データが検出されました。デフォルト設定を使用します。");
-      return DEFAULT_SETTINGS;
-    }
-    
-    return { ...DEFAULT_SETTINGS, ...parsed };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error("設定の読み込みに失敗しました:", errorMessage);
-    
-    // JSON解析エラーの場合は設定をリセット
-    if (error instanceof SyntaxError) {
-      console.warn("設定データが破損しています。デフォルト設定を使用します。");
-      try {
-        localStorage.removeItem(STORAGE_KEY);
-      } catch {
-        // 無視
-      }
-    }
-    
+  const stored = readJsonRecord(STORAGE_KEY, {
+    context: SETTINGS_CONTEXT,
+    warningMessage: INVALID_SETTINGS_WARNING,
+    corruptWarning: CORRUPT_SETTINGS_WARNING,
+  });
+  if (!stored) {
     return DEFAULT_SETTINGS;
   }
+  return { ...DEFAULT_SETTINGS, ...stored };
 }
 
-/**
- * 設定をリセット（デフォルトに戻す）
- */
 export function resetSettings(): void {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error("設定のリセットに失敗しました:", errorMessage);
-    throw new Error(`設定のリセットに失敗しました: ${errorMessage}`);
-  }
+  safeRemoveItem(STORAGE_KEY, SETTINGS_CONTEXT, SETTINGS_RESET_FAILURE);
 }
 
-/**
- * 特定の設定項目を取得
- */
 export function getSetting<K extends keyof AppSettings>(key: K): AppSettings[K] {
   const settings = loadSettings();
   return settings[key];
 }
 
-/**
- * APIキーが設定されているか確認
- */
 export function hasApiKey(): boolean {
   const settings = loadSettings();
-  if (settings.aiProvider === "openai") {
-    return settings.openaiApiKey.length > 0;
-  } else if (settings.aiProvider === "gemini") {
-    return settings.geminiApiKey.length > 0;
+  switch (settings.aiProvider) {
+    case "openai":
+      return settings.openaiApiKey.length > 0;
+    case "gemini":
+      return settings.geminiApiKey.length > 0;
+    default:
+      return false;
   }
-  return false;
 }
 
-/**
- * 設定をエクスポート（バックアップ用）
- */
-export function exportSettings(): string {
-  const settings = loadSettings();
-  return JSON.stringify(settings, null, 2);
-}
-
-/**
- * 設定をインポート（バックアップから復元）
- */
-export function importSettings(json: string): void {
+export function importSettings(fileContent: string): void {
   try {
-    const settings = JSON.parse(json);
-    
-    // インポートされた設定の妥当性を検証
-    if (typeof settings !== "object" || settings === null) {
-      throw new Error("設定データが正しい形式ではありません");
+    const parsed = JSON.parse(fileContent);
+    if (!isRecord(parsed)) {
+      throw new Error("Settings data has an invalid structure.");
     }
-    
-    // 必須フィールドの存在を確認
-    const requiredFields: (keyof AppSettings)[] = ["aiProvider", "openaiModel"];
+
+    const requiredFields: Array<keyof AppSettings> = ["aiProvider", "openaiModel"];
     for (const field of requiredFields) {
-      if (!(field in settings)) {
-        throw new Error(`必須フィールド "${field}" が見つかりません`);
+      if (!(field in parsed)) {
+        throw new Error(`Missing required settings field: ${field}`);
       }
     }
-    
-    saveSettings(settings);
+
+    saveSettings(parsed as Partial<AppSettings>);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error("設定のインポートに失敗しました:", errorMessage);
-    
+    const message = getErrorMessage(error);
+    logError(SETTINGS_CONTEXT, error, { operation: "import" });
     if (error instanceof SyntaxError) {
-      throw new Error("設定ファイルのJSON形式が無効です");
+      throw new Error("Settings file contains invalid JSON.");
     }
-    
-    throw new Error(`設定のインポートに失敗しました: ${errorMessage}`);
+    throw new Error(`${SETTINGS_IMPORT_FAILURE}: ${message}`);
   }
 }
 
-/**
- * プロンプト設定をローカルストレージに保存
- */
 export function savePromptSettings(settings: Partial<PromptSettings>): void {
   try {
     const currentSettings = loadPromptSettings();
-    const newSettings = { ...currentSettings, ...settings };
-    localStorage.setItem(PROMPT_STORAGE_KEY, JSON.stringify(newSettings));
+    const mergedSettings = { ...currentSettings, ...settings };
+    writeJson(PROMPT_STORAGE_KEY, mergedSettings, {
+      context: PROMPT_CONTEXT,
+      quotaMessage: PROMPT_QUOTA_ERROR_MESSAGE,
+      failureMessage: PROMPT_SAVE_FAILURE,
+    });
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error("プロンプト設定の保存に失敗しました:", errorMessage);
-    
-    if (error instanceof DOMException && error.name === "QuotaExceededError") {
-      throw new Error(
-        "ストレージの容量制限に達しました。プロンプトデータを削減するか、ブラウザのキャッシュをクリアしてください。"
-      );
+    if (error instanceof Error) {
+      throw error;
     }
-    
-    throw new Error(`プロンプト設定の保存に失敗しました: ${errorMessage}`);
+    throw new Error(`${PROMPT_SAVE_FAILURE}: ${getErrorMessage(error)}`);
   }
 }
 
-/**
- * プロンプト設定をローカルストレージから読み込み
- */
 export function loadPromptSettings(): PromptSettings {
-  try {
-    const stored = localStorage.getItem(PROMPT_STORAGE_KEY);
-    if (!stored) {
-      return DEFAULT_PROMPT_SETTINGS;
-    }
-    const parsed = JSON.parse(stored);
-    
-    // データの妥当性を検証
-    if (typeof parsed !== "object" || parsed === null) {
-      console.warn("無効なプロンプト設定データが検出されました。デフォルト設定を使用します。");
-      return DEFAULT_PROMPT_SETTINGS;
-    }
-    
-    return { ...DEFAULT_PROMPT_SETTINGS, ...parsed };
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    console.error("プロンプト設定の読み込みに失敗しました:", errorMessage);
-    
-    // JSON解析エラーの場合は設定をリセット
-    if (error instanceof SyntaxError) {
-      console.warn("プロンプト設定データが破損しています。デフォルト設定を使用します。");
-      try {
-        localStorage.removeItem(PROMPT_STORAGE_KEY);
-      } catch {
-        // 無視
-      }
-    }
-    
+  const stored = readJsonRecord(PROMPT_STORAGE_KEY, {
+    context: PROMPT_CONTEXT,
+    warningMessage: INVALID_PROMPT_WARNING,
+    corruptWarning: CORRUPT_PROMPT_WARNING,
+  });
+  if (!stored) {
     return DEFAULT_PROMPT_SETTINGS;
   }
+  return { ...DEFAULT_PROMPT_SETTINGS, ...stored };
 }
 
-/**
- * プロンプト設定をリセット
- */
 export function resetPromptSettings(): void {
-  localStorage.removeItem(PROMPT_STORAGE_KEY);
+  safeRemoveItem(PROMPT_STORAGE_KEY, PROMPT_CONTEXT);
 }
 
 const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
@@ -247,38 +182,110 @@ const DEFAULT_DISPLAY_SETTINGS: DisplaySettings = {
   showDebugInfo: false,
 };
 
-/**
- * 表示設定をローカルストレージに保存
- */
 export function saveDisplaySettings(settings: Partial<DisplaySettings>): void {
   try {
     const currentSettings = loadDisplaySettings();
-    const newSettings = { ...currentSettings, ...settings };
-    localStorage.setItem(DISPLAY_STORAGE_KEY, JSON.stringify(newSettings));
+    const mergedSettings = { ...currentSettings, ...settings };
+    writeJson(DISPLAY_STORAGE_KEY, mergedSettings, {
+      context: DISPLAY_CONTEXT,
+      failureMessage: DISPLAY_SAVE_FAILURE,
+    });
   } catch (error) {
-    console.error("表示設定の保存に失敗しました:", error);
+    // display settings are optional, so surface the error only in logs
+    logError(DISPLAY_CONTEXT, error, { operation: "save", key: DISPLAY_STORAGE_KEY });
   }
 }
 
-/**
- * 表示設定をローカルストレージから読み込み
- */
 export function loadDisplaySettings(): DisplaySettings {
-  try {
-    const stored = localStorage.getItem(DISPLAY_STORAGE_KEY);
-    if (!stored) {
-      return DEFAULT_DISPLAY_SETTINGS;
-    }
-    return { ...DEFAULT_DISPLAY_SETTINGS, ...JSON.parse(stored) };
-  } catch (error) {
-    console.error("表示設定の読み込みに失敗しました:", error);
+  const stored = readJsonRecord(DISPLAY_STORAGE_KEY, {
+    context: DISPLAY_CONTEXT,
+    warningMessage: "Invalid display settings payload detected; using defaults.",
+  });
+  if (!stored) {
     return DEFAULT_DISPLAY_SETTINGS;
   }
+
+  return {
+    ...DEFAULT_DISPLAY_SETTINGS,
+    ...stored,
+  };
 }
 
-/**
- * 表示設定をリセット
- */
 export function resetDisplaySettings(): void {
-  localStorage.removeItem(DISPLAY_STORAGE_KEY);
+  safeRemoveItem(DISPLAY_STORAGE_KEY, DISPLAY_CONTEXT);
+}
+
+function writeJson(
+  key: string,
+  value: unknown,
+  options: {
+    context: string;
+    quotaMessage?: string;
+    failureMessage: string;
+  }
+): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    if (options.quotaMessage && isQuotaExceededError(error)) {
+      logError(options.context, error, { operation: "save", key, reason: "QuotaExceeded" });
+      throw new Error(options.quotaMessage);
+    }
+
+    const message = getErrorMessage(error);
+    logError(options.context, error, { operation: "save", key });
+    throw new Error(`${options.failureMessage}: ${message}`);
+  }
+}
+
+function readJsonRecord(
+  key: string,
+  options: {
+    context: string;
+    warningMessage: string;
+    corruptWarning?: string;
+  }
+): Record<string, unknown> | null {
+  try {
+    const storedValue = localStorage.getItem(key);
+    if (!storedValue) {
+      return null;
+    }
+
+    const parsed = JSON.parse(storedValue);
+    if (!isRecord(parsed)) {
+      logWarning(options.context, options.warningMessage, { key });
+      return null;
+    }
+
+    return parsed;
+  } catch (error) {
+    logError(options.context, error, { operation: "load", key });
+    if (error instanceof SyntaxError) {
+      const warningMessage = options.corruptWarning ?? options.warningMessage;
+      logWarning(options.context, warningMessage, { key });
+      safeRemoveItem(key, options.context);
+    }
+    return null;
+  }
+}
+
+function safeRemoveItem(key: string, context: string, failureMessage?: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch (error) {
+    const message = getErrorMessage(error);
+    logError(context, error, { operation: "remove", key });
+    if (failureMessage) {
+      throw new Error(`${failureMessage}: ${message}`);
+    }
+  }
+}
+
+function isQuotaExceededError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === QUOTA_EXCEEDED_ERROR_NAME;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

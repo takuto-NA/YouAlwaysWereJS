@@ -1,14 +1,39 @@
+/**
+ * Demonstrates Kuzu persistence inside the developer UI.
+ * Why it matters: this flow seeds or reuses the on-disk database so engineers can
+ * verify long-running graph state while the app handles resets and aborts safely.
+ */
 import { useEffect, useRef, useState } from "react";
 import { KUZU_DEMO_FLAG, seedDemoData, loadKuzuModule } from "../services/kuzuClient";
+import { logDebug, logError, logWarning } from "../utils/errorHandler";
 
+const DEMO_LOG_CONTEXT = "KuzuPersistentDemo";
 const KUZU_DB_DIR = "/database";
 const KUZU_DB_PATH = `${KUZU_DB_DIR}/persistent.db`;
+const RUN_ABORTED_ERROR_MESSAGE = "RUN_ABORTED";
+const RUN_MODE_FIRST: RunMode = "first-run";
+const RUN_MODE_SUBSEQUENT: RunMode = "subsequent";
+const RESOURCE_BUSY_CODE = "EBUSY";
+const INVALID_ARGUMENT_CODE = "EINVAL";
+const NO_ENTITY_CODE = "ENOENT";
+const RESOURCE_BUSY_ERRNOS = new Set([16, -16]);
+const NO_SPACE_ERRNOS = new Set([28, -28]);
+const NO_ENTITY_ERRNOS = new Set([2, -2]);
+const FALLBACK_IDB_DATABASE_NAMES = ["EM_FS_IDBFS", "kuzu", "kuzu-wasm"];
+const FILE_EXISTS_CODE = "EEXIST";
+const FILE_EXISTS_ERRNOS = new Set([17, -17, 20]);
+const NOT_FOUND_ERROR_NAME = "NotFoundError";
+const RESOURCE_RETRY_DELAY_MS = 50;
 
 type RunMode = "first-run" | "subsequent";
+type KuzuModuleInstance = Awaited<ReturnType<typeof loadKuzuModule>>;
+type KuzuDatabaseInstance = InstanceType<KuzuModuleInstance["Database"]>;
+type KuzuConnectionInstance = InstanceType<KuzuModuleInstance["Connection"]>;
+type KuzuQueryHandle = Awaited<ReturnType<KuzuConnectionInstance["query"]>>;
 
 class RunAbortedError extends Error {
   constructor() {
-    super("RUN_ABORTED");
+    super(RUN_ABORTED_ERROR_MESSAGE);
     this.name = "RunAbortedError";
   }
 }
@@ -55,47 +80,12 @@ export default function KuzuPersistentDemo() {
             : "Existing database detected. Loading from persistent storage..."
         );
 
-        if (isFirstRun) {
-          await seedDemoData({ kuzuInstance: kuzu, signal: abortSignal, onLog: appendLog });
-          if (!cancelled) {
-            window.localStorage.setItem(KUZU_DEMO_FLAG, "true");
-            setLastRunMode("first-run");
-          }
-        } else {
-          let succeeded = false;
-          try {
-            await queryDatabase(kuzu, appendLog, abortSignal);
-            succeeded = true;
-            if (!cancelled) {
-              setLastRunMode("subsequent");
-            }
-          } catch (error) {
-            if (isRunAbortedError(error)) {
-              return;
-            }
-            if (isMissingSchemaError(error)) {
-              appendLog(
-                "Existing database is missing expected tables. Recreating schema and re-running queries..."
-              );
-              await seedDemoData({ kuzuInstance: kuzu, signal: abortSignal, onLog: appendLog });
-              if (!cancelled) {
-                window.localStorage.setItem(KUZU_DEMO_FLAG, "true");
-                setLastRunMode("first-run");
-              }
-              appendLog("Schema recreated. Running read queries again...");
-              await queryDatabase(kuzu, appendLog, abortSignal);
-              succeeded = true;
-              if (!cancelled) {
-                setLastRunMode("subsequent");
-              }
-            } else {
-              throw error;
-            }
-          }
+        const runMode = isFirstRun
+          ? await performFirstRun(kuzu, appendLog, abortSignal)
+          : await performSubsequentRun(kuzu, appendLog, abortSignal);
 
-          if (!succeeded) {
-            throw new Error("Unable to query the database.");
-          }
+        if (!cancelled) {
+          setLastRunMode(runMode);
         }
 
         checkAbort(abortSignal);
@@ -109,7 +99,7 @@ export default function KuzuPersistentDemo() {
           setErrorMessage(message);
           appendLog(`Error: ${message}`);
         }
-        console.error("[KuzuPersistentDemo]", error);
+        logError(DEMO_LOG_CONTEXT, error, { phase: "runDemo" });
       } finally {
         if (!cancelled) {
           setIsRunning(false);
@@ -118,9 +108,10 @@ export default function KuzuPersistentDemo() {
     };
 
     runDemo(signal).catch((error) => {
-      if (!isRunAbortedError(error)) {
-        console.error("[KuzuPersistentDemo] runDemo failed", error);
+      if (isRunAbortedError(error)) {
+        return;
       }
+      logError(DEMO_LOG_CONTEXT, error, { phase: "runDemo:unhandled" });
     });
 
     return () => {
@@ -239,7 +230,7 @@ export default function KuzuPersistentDemo() {
 }
 
 async function queryDatabase(
-  kuzu: any,
+  kuzu: KuzuModuleInstance,
   appendLog: (line: string) => void,
   signal?: AbortSignal
 ) {
@@ -250,27 +241,29 @@ async function queryDatabase(
   await kuzu.FS.syncfs(true);
   appendLog("Sync complete. Opening database for read queries...");
 
-  const db = new kuzu.Database(KUZU_DB_PATH);
-  const conn = new kuzu.Connection(db);
+  const database: KuzuDatabaseInstance = new kuzu.Database(KUZU_DB_PATH);
+  const connection: KuzuConnectionInstance = new kuzu.Connection(database);
 
   try {
     const queries = [
       {
         sql: "MATCH (u:User) -[f:Follows]-> (v:User) RETURN u.name, f.since, v.name",
-        formatter: (row: Record<string, string | number>) =>
-          `User ${row["u.name"]} follows ${row["v.name"]} since ${row["f.since"]}`,
+        formatter: (row: Record<string, unknown>) =>
+          `User ${String(row["u.name"])} follows ${String(row["v.name"])} since ${String(
+            row["f.since"]
+          )}`,
       },
       {
         sql: "MATCH (u:User) -[l:LivesIn]-> (c:City) RETURN u.name, c.name",
-        formatter: (row: Record<string, string | number>) =>
-          `User ${row["u.name"]} lives in ${row["c.name"]}`,
+        formatter: (row: Record<string, unknown>) =>
+          `User ${String(row["u.name"])} lives in ${String(row["c.name"])}`,
       },
     ];
 
     for (const { sql, formatter } of queries) {
       checkAbort(signal);
       appendLog(`Executing: ${sql}`);
-      const queryResult = await conn.query(sql);
+      const queryResult: KuzuQueryHandle = await connection.query(sql);
       checkAbort(signal);
       const rows = await queryResult.getAllObjects();
       appendLog("Query result:");
@@ -285,14 +278,20 @@ async function queryDatabase(
     }
   } finally {
     try {
-      await conn.close();
+      await connection.close();
     } catch (error) {
-      console.warn("[KuzuPersistentDemo] Failed to close connection during query", error);
+      logWarning(DEMO_LOG_CONTEXT, "Failed to close connection during query", {
+        phase: "queryDatabase",
+        error: extractErrorMessage(error),
+      });
     }
     try {
-      await db.close();
+      await database.close();
     } catch (error) {
-      console.warn("[KuzuPersistentDemo] Failed to close database during query", error);
+      logWarning(DEMO_LOG_CONTEXT, "Failed to close database during query", {
+        phase: "queryDatabase",
+        error: extractErrorMessage(error),
+      });
     }
   }
 
@@ -302,24 +301,67 @@ async function queryDatabase(
   }
 }
 
-async function ensureDirectory(kuzu: any, path: string) {
+async function ensureDirectory(kuzu: KuzuModuleInstance, path: string) {
   try {
     await kuzu.FS.mkdir(path);
-  } catch (error: any) {
-    const message = typeof error?.message === "string" ? error.message : "";
-    const errno = typeof error?.errno === "number" ? error.errno : undefined;
-    const code = typeof error?.code === "string" ? error.code : undefined;
-    const knownExists =
-      message.includes("File exists") || code === "EEXIST" || errno === 17 || errno === -17 || errno === 20;
+  } catch (error) {
+    const { message, code, errno } = readSystemError(error);
+    const alreadyExists =
+      message.includes("File exists") ||
+      code === FILE_EXISTS_CODE ||
+      (typeof errno === "number" && FILE_EXISTS_ERRNOS.has(errno));
 
-    if (!knownExists) {
+    if (!alreadyExists) {
       throw error;
     }
   }
 }
 
+// Seeds the persistent database once so developers always start from known graph state.
+async function performFirstRun(
+  kuzu: KuzuModuleInstance,
+  appendLog: (line: string) => void,
+  abortSignal: AbortSignal
+): Promise<RunMode> {
+  checkAbort(abortSignal);
+  await seedDemoData({ kuzuInstance: kuzu, signal: abortSignal, onLog: appendLog });
+  window.localStorage.setItem(KUZU_DEMO_FLAG, "true");
+  checkAbort(abortSignal);
+  return RUN_MODE_FIRST;
+}
+
+// Handles the common case of reusing persistent data while repairing corrupt schemas if needed.
+async function performSubsequentRun(
+  kuzu: KuzuModuleInstance,
+  appendLog: (line: string) => void,
+  abortSignal: AbortSignal
+): Promise<RunMode> {
+  try {
+    await queryDatabase(kuzu, appendLog, abortSignal);
+    return RUN_MODE_SUBSEQUENT;
+  } catch (error) {
+    if (isRunAbortedError(error)) {
+      throw error;
+    }
+
+    if (!isMissingSchemaError(error)) {
+      throw error;
+    }
+
+    appendLog(
+      "Existing database is missing expected tables. Recreating schema and re-running queries..."
+    );
+    await seedDemoData({ kuzuInstance: kuzu, signal: abortSignal, onLog: appendLog });
+    window.localStorage.setItem(KUZU_DEMO_FLAG, "true");
+    appendLog("Schema recreated. Running read queries again...");
+    await queryDatabase(kuzu, appendLog, abortSignal);
+    return RUN_MODE_SUBSEQUENT;
+  }
+}
+
+// Guarantees IndexedDB-backed storage is mounted fresh before reads or writes.
 async function remountIdbfs(
-  kuzu: any,
+  kuzu: KuzuModuleInstance,
   path: string,
   appendLog?: (line: string) => void,
   signal?: AbortSignal
@@ -330,7 +372,7 @@ async function remountIdbfs(
   try {
     checkAbort(signal);
     await kuzu.FS.mountIdbfs(path);
-  } catch (error: any) {
+  } catch (error) {
     if (isResourceBusy(error)) {
       appendLog?.("Mount point busy. Attempting to unmount again...");
       await safeUnmount(kuzu, path, appendLog, true, "Unmounted stale mount (retry)", signal);
@@ -342,8 +384,9 @@ async function remountIdbfs(
   }
 }
 
+// Keeps the virtual filesystem clean so subsequent mounts do not inherit stale state.
 async function safeUnmount(
-  kuzu: any,
+  kuzu: KuzuModuleInstance,
   path: string,
   appendLog?: (line: string) => void,
   force = false,
@@ -354,16 +397,14 @@ async function safeUnmount(
     checkAbort(signal);
     await kuzu.FS.unmount(path);
     appendLog?.(`${logMessage} at ${path}.`);
-  } catch (error: any) {
-    const errMessage = typeof error?.message === "string" ? error.message : "";
-    const code = typeof error?.code === "string" ? error.code : undefined;
+  } catch (error) {
     if (isNotMountedError(error)) {
       return;
     }
 
     if (force && isResourceBusy(error)) {
       appendLog?.("Resource still busy; retrying unmount after small delay...");
-      await new Promise((resolve) => setTimeout(resolve, 50));
+      await new Promise((resolve) => setTimeout(resolve, RESOURCE_RETRY_DELAY_MS));
       return safeUnmount(kuzu, path, appendLog, false, logMessage, signal);
     }
 
@@ -371,38 +412,33 @@ async function safeUnmount(
   }
 }
 
-function isResourceBusy(error: any) {
-  const message = typeof error?.message === "string" ? error.message : "";
-  const code = typeof error?.code === "string" ? error.code : undefined;
-  const errno = typeof error?.errno === "number" ? error.errno : undefined;
+function isResourceBusy(error: unknown) {
+  const { message, code, errno } = readSystemError(error);
   return (
     message.includes("Resource busy") ||
-    code === "EBUSY" ||
-    errno === 16 ||
-    errno === -16
+    code === RESOURCE_BUSY_CODE ||
+    (typeof errno === "number" && RESOURCE_BUSY_ERRNOS.has(errno))
   );
 }
 
-function isNotMountedError(error: any) {
-  const message = typeof error?.message === "string" ? error.message : "";
-  const code = typeof error?.code === "string" ? error.code : undefined;
-  const errno = typeof error?.errno === "number" ? error.errno : undefined;
+function isNotMountedError(error: unknown) {
+  const { message, code, errno } = readSystemError(error);
   return (
     message.includes("not mounted") ||
     message.includes("No such device") ||
     message.includes("No mount point") ||
     message.includes("Invalid argument") ||
-    code === "EINVAL" ||
-    code === "ENOENT" ||
-    errno === 28 ||
-    errno === -28 ||
-    errno === 2 ||
-    errno === -2
+    code === INVALID_ARGUMENT_CODE ||
+    code === NO_ENTITY_CODE ||
+    (typeof errno === "number" && (NO_SPACE_ERRNOS.has(errno) || NO_ENTITY_ERRNOS.has(errno)))
   );
 }
 
 function isRunAbortedError(error: unknown) {
-  return error instanceof RunAbortedError || (error instanceof Error && error.message === "RUN_ABORTED");
+  return (
+    error instanceof RunAbortedError ||
+    (error instanceof Error && error.message === RUN_ABORTED_ERROR_MESSAGE)
+  );
 }
 
 function checkAbort(signal?: AbortSignal) {
@@ -422,6 +458,7 @@ function isMissingSchemaError(error: unknown) {
   );
 }
 
+// Wipes IndexedDB copies so the demo can simulate a fresh install on demand.
 async function clearPersistentStorage() {
   if (typeof indexedDB === "undefined") {
     throw new Error("IndexedDB is not available in this environment.");
@@ -435,30 +472,37 @@ async function clearPersistentStorage() {
   }
 }
 
+// Enumerates possible persistence stores so cleanup can target every browser implementation.
 async function discoverIdbfsDatabases(): Promise<string[]> {
-  const fallbackNames = ["EM_FS_IDBFS", "kuzu", "kuzu-wasm"];
+  const indexedDbWithEnumeration = indexedDB as typeof indexedDB & {
+    databases?: () => Promise<Array<{ name?: string | null }>>;
+  };
 
-  const hasEnumeration = typeof (indexedDB as any).databases === "function";
+  const hasEnumeration = typeof indexedDbWithEnumeration.databases === "function";
   if (!hasEnumeration) {
-    return fallbackNames;
+    return FALLBACK_IDB_DATABASE_NAMES;
   }
 
   try {
-    const databases: Array<{ name?: string | null }> = await (indexedDB as any).databases();
+    const databases = await indexedDbWithEnumeration.databases();
     const names = databases
       .map((db) => db.name)
       .filter((name): name is string => Boolean(name));
 
     if (names.length === 0) {
-      return fallbackNames;
+      return FALLBACK_IDB_DATABASE_NAMES;
     }
 
     return names;
-  } catch {
-    return fallbackNames;
+  } catch (error) {
+    logDebug(DEMO_LOG_CONTEXT, "Falling back to default IndexedDB names", {
+      reason: extractErrorMessage(error),
+    });
+    return FALLBACK_IDB_DATABASE_NAMES;
   }
 }
 
+// Removes a single IndexedDB database, tolerating races where the store already vanished.
 function deleteDatabase(name: string) {
   return new Promise<void>((resolve, reject) => {
     try {
@@ -466,22 +510,36 @@ function deleteDatabase(name: string) {
       request.onsuccess = () => resolve();
       request.onblocked = () => resolve();
       request.onerror = () => {
-        const err = request.error;
-        if (err && err.name === "NotFoundError") {
+        const error = request.error;
+        if (error && error.name === NOT_FOUND_ERROR_NAME) {
           resolve();
         } else {
-          reject(err ?? new Error(`Failed to delete IndexedDB database: ${name}`));
+          reject(error ?? new Error(`Failed to delete IndexedDB database: ${name}`));
         }
       };
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (message.includes("not found") || message.includes("NotFoundError")) {
+      const message = extractErrorMessage(error);
+      if (message.includes("not found") || message.includes(NOT_FOUND_ERROR_NAME)) {
         resolve();
       } else {
         reject(error as Error);
       }
     }
   });
+}
+
+// Normalises filesystem-related errors so retry logic can stay declarative.
+function readSystemError(error: unknown): { message: string; code?: string; errno?: number } {
+  if (typeof error === "object" && error !== null) {
+    const candidate = error as { message?: unknown; code?: unknown; errno?: unknown };
+    const message =
+      typeof candidate.message === "string" ? candidate.message : extractErrorMessage(error);
+    const code = typeof candidate.code === "string" ? candidate.code : undefined;
+    const errno = typeof candidate.errno === "number" ? candidate.errno : undefined;
+    return { message, code, errno };
+  }
+
+  return { message: extractErrorMessage(error) };
 }
 
 function extractErrorMessage(error: unknown): string {

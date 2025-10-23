@@ -16,6 +16,9 @@ const FILESYSTEM_RETRY_DELAY_MS = 50;
 const MAX_STRING_EXTRACTION_DEPTH = 5;
 const DEFAULT_PREVIEW_LIMIT = 25;
 const MIN_COLUMN_TOKENS = 2;
+const MEMORY_MAX_ID_QUERY = "MATCH (m:Memory) RETURN COALESCE(MAX(m.id), 0) AS maxId";
+const AUTO_MEMORY_ID_PLACEHOLDER = "__AUTO_MEMORY_ID__";
+const MEMORY_ID_INCREMENT = 1;
 
 interface KuzuFileSystem {
   mkdir(path: string): Promise<void>;
@@ -215,9 +218,14 @@ export interface NormalizedCypherStatement {
   autoMemoryIdPlaceholders?: number;
 }
 
+interface ExecuteQueryOptions {
+  skipNormalization?: boolean;
+  autoMemoryIdPlaceholders?: number;
+}
+
 export async function executeQuery(
   sql: string,
-  options: { skipNormalization?: boolean } = {}
+  options: ExecuteQueryOptions = {}
 ): Promise<QueryResult> {
   return runWithConnection(async ({ conn }) => {
     const normalization = options.skipNormalization
@@ -230,12 +238,15 @@ export async function executeQuery(
       });
     }
 
+    const placeholderCount =
+      options.autoMemoryIdPlaceholders ?? normalization.autoMemoryIdPlaceholders ?? 0;
+
     let statementToRun = normalization.statement;
-    if (!options.skipNormalization && (normalization.autoMemoryIdPlaceholders ?? 0) > 0) {
+    if (placeholderCount > 0) {
       statementToRun = await injectAutoMemoryIds(
         conn,
         normalization.statement,
-        normalization.autoMemoryIdPlaceholders ?? 0
+        placeholderCount
       );
     }
 
@@ -243,6 +254,7 @@ export async function executeQuery(
   });
 }
 
+// Ensures Memory nodes receive primary keys even when callers forget to supply them.
 async function injectAutoMemoryIds(
   conn: KuzuConnection,
   statement: string,
@@ -254,7 +266,7 @@ async function injectAutoMemoryIds(
 
   const result = await runQuery(
     conn,
-    "MATCH (m:Memory) RETURN COALESCE(MAX(m.id), 0) AS maxId"
+    MEMORY_MAX_ID_QUERY
   );
 
   const firstRow = result.rows[0] ?? {};
@@ -269,10 +281,10 @@ async function injectAutoMemoryIds(
   let nextId = baseMax + 1;
   let replacements = 0;
 
-  const rewritten = statement.replace(/__AUTO_MEMORY_ID__/g, () => {
+  const rewritten = statement.replace(new RegExp(AUTO_MEMORY_ID_PLACEHOLDER, "g"), () => {
     replacements += 1;
     const value = nextId;
-    nextId += 1;
+    nextId += MEMORY_ID_INCREMENT;
     return String(value);
   });
 
@@ -351,10 +363,8 @@ export function normalizeCypherStatement(statement: string): NormalizedCypherSta
       const beforeProps = fullMatch.slice(0, fullMatch.indexOf("{") + 1);
       const afterProps = fullMatch.slice(fullMatch.lastIndexOf("}"));
       const trimmedProps = propertyBlock.trim();
-      const newProps =
-        trimmedProps.length > 0
-          ? `id: __AUTO_MEMORY_ID__, ${trimmedProps}`
-          : "id: __AUTO_MEMORY_ID__";
+      const idProperty = `id: ${AUTO_MEMORY_ID_PLACEHOLDER}`;
+      const newProps = trimmedProps.length > 0 ? `${idProperty}, ${trimmedProps}` : idProperty;
 
       return `${beforeProps}${newProps}${afterProps}`;
     }

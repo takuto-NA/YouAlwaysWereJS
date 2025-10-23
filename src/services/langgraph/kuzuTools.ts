@@ -54,7 +54,10 @@ export function createKuzuMemoryTools(): StructuredToolInterface[] {
       }
 
       try {
-        const result = await executeQuery(normalization.statement, { skipNormalization: true });
+        const result = await executeQuery(normalization.statement, {
+          skipNormalization: true,
+          autoMemoryIdPlaceholders: normalization.autoMemoryIdPlaceholders,
+        });
         const columnSummary = result.columns;
         const rowCount = result.rows.length;
         applyDdlStatementToCache(normalization.statement);

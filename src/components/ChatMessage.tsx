@@ -1,9 +1,9 @@
 /**
- * チャットメッセージ表示コンポーネント
- * - 文章はタイプライターで一文字ずつ表示
- * - コードブロック / 表 / 画像は即時表示
+ * Renders chat messages while keeping Markdown readable.
+ * Plain text animates with a typewriter effect so users sense progress,
+ * whereas complex markup (tables/code/images) appears instantly to stay legible.
  */
-import { useMemo } from "react";
+import { useMemo, type JSX } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -54,19 +54,25 @@ const SPECIAL_BLOCK_PRIORITY: Record<Exclude<BlockType, "text">, number> = {
   image: 1,
 };
 
+const renderMarkdown = (content: string, key: string) => (
+  <ReactMarkdown key={key} remarkPlugins={MARKDOWN_PLUGINS} components={MARKDOWN_COMPONENTS}>
+    {content}
+  </ReactMarkdown>
+);
+
 const hasTablePipes = (line: string) => (line.match(/\|/g) || []).length >= 2;
 
 const detectCodeBlocks = (content: string): BlockRange[] => {
   const matches: BlockRange[] = [];
-  let match: RegExpExecArray | null;
+  let regexMatch: RegExpExecArray | null;
 
   CODE_BLOCK_REGEX.lastIndex = 0;
-  while ((match = CODE_BLOCK_REGEX.exec(content)) !== null) {
+  while ((regexMatch = CODE_BLOCK_REGEX.exec(content)) !== null) {
     matches.push({
       type: "code",
-      start: match.index,
-      end: match.index + match[0].length,
-      content: match[0],
+      start: regexMatch.index,
+      end: regexMatch.index + regexMatch[0].length,
+      content: regexMatch[0],
     });
   }
 
@@ -75,15 +81,15 @@ const detectCodeBlocks = (content: string): BlockRange[] => {
 
 const detectImageBlocks = (content: string): BlockRange[] => {
   const matches: BlockRange[] = [];
-  let match: RegExpExecArray | null;
+  let regexMatch: RegExpExecArray | null;
 
   IMAGE_REGEX.lastIndex = 0;
-  while ((match = IMAGE_REGEX.exec(content)) !== null) {
+  while ((regexMatch = IMAGE_REGEX.exec(content)) !== null) {
     matches.push({
       type: "image",
-      start: match.index,
-      end: match.index + match[0].length,
-      content: match[0],
+      start: regexMatch.index,
+      end: regexMatch.index + regexMatch[0].length,
+      content: regexMatch[0],
     });
   }
 
@@ -111,10 +117,10 @@ const detectTableBlocks = (content: string, excluded: BlockRange[]): BlockRange[
   const isInsideExcluded = (index: number) =>
     excluded.some((range) => index >= range.start && index < range.end);
 
-  for (let i = 0; i < lines.length - 1; i += 1) {
-    const headerLine = lines[i];
-    const dividerLine = lines[i + 1];
-    const headerStart = lineStarts[i];
+  for (let lineIndex = 0; lineIndex < lines.length - 1; lineIndex += 1) {
+    const headerLine = lines[lineIndex];
+    const dividerLine = lines[lineIndex + 1];
+    const headerStart = lineStarts[lineIndex];
 
     if (isInsideExcluded(headerStart)) {
       continue;
@@ -124,17 +130,22 @@ const detectTableBlocks = (content: string, excluded: BlockRange[]): BlockRange[
       continue;
     }
 
-    if (!TABLE_DIVIDER_REGEX.test(dividerLine.trim()) || isInsideExcluded(lineStarts[i + 1])) {
+    if (!TABLE_DIVIDER_REGEX.test(dividerLine.trim()) || isInsideExcluded(lineStarts[lineIndex + 1])) {
       continue;
     }
 
-    let j = i + 2;
-    while (j < lines.length && hasTablePipes(lines[j]) && !isInsideExcluded(lineStarts[j])) {
-      j += 1;
+    let tableLineIndex = lineIndex + 2;
+    while (
+      tableLineIndex < lines.length &&
+      hasTablePipes(lines[tableLineIndex]) &&
+      !isInsideExcluded(lineStarts[tableLineIndex])
+    ) {
+      tableLineIndex += 1;
     }
 
-    const startIndex = lineStarts[i];
-    const endIndex = j < lines.length ? lineStarts[j] : content.length;
+    const startIndex = lineStarts[lineIndex];
+    const endIndex =
+      tableLineIndex < lines.length ? lineStarts[tableLineIndex] : content.length;
     const candidate = { start: startIndex, end: endIndex };
 
     if (overlaps(candidate, [...excluded, ...ranges])) {
@@ -148,7 +159,7 @@ const detectTableBlocks = (content: string, excluded: BlockRange[]): BlockRange[
       content: content.slice(startIndex, endIndex),
     });
 
-    i = j - 1;
+    lineIndex = tableLineIndex - 1;
   }
 
   return ranges;
@@ -179,6 +190,7 @@ const mergeAndSortRanges = (blocks: BlockRange[]): BlockRange[] => {
   return merged;
 };
 
+// Split content so the typewriter can animate plain text while heavier blocks stay readable.
 const buildMessageBlocks = (content: string): MessageBlock[] => {
   if (!content) {
     return [{ type: "text", content: "" }];
@@ -232,7 +244,7 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
   const totalPlainTextLength = plainTextContent.length;
   const hasPlainText = totalPlainTextLength > 0;
 
-  // AIの応答のみタイプライター効果を適用
+  // Only animate assistant responses when we have plain text to reveal for pacing feedback.
   const shouldUseTypewriter =
     enableTypewriter && isAssistant && message.isTyping !== false && hasPlainText;
 
@@ -250,6 +262,7 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
 
   const totalTypedLength = shouldUseTypewriter ? displayedText.length : totalPlainTextLength;
 
+  // Reveal blocks sequentially so readers get progressive feedback without hiding complex layouts.
   const renderedBlocks = useMemo(() => {
     let textCursor = 0;
     const elements: Array<JSX.Element | null> = [];
@@ -272,15 +285,7 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
 
         const visibleContent = block.content.slice(0, visibleLength);
 
-        elements.push(
-          <ReactMarkdown
-            key={`text-${index}`}
-            remarkPlugins={MARKDOWN_PLUGINS}
-            components={MARKDOWN_COMPONENTS}
-          >
-            {visibleContent}
-          </ReactMarkdown>,
-        );
+        elements.push(renderMarkdown(visibleContent, `text-${index}`));
         return;
       }
 
@@ -290,15 +295,7 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
         return;
       }
 
-      elements.push(
-        <ReactMarkdown
-          key={`${block.type}-${index}`}
-          remarkPlugins={MARKDOWN_PLUGINS}
-          components={MARKDOWN_COMPONENTS}
-        >
-          {block.content}
-        </ReactMarkdown>,
-      );
+      elements.push(renderMarkdown(block.content, `${block.type}-${index}`));
     });
 
     return elements;
@@ -354,4 +351,3 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
 }
 
 export default ChatMessage;
-
