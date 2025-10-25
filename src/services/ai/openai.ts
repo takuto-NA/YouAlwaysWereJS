@@ -7,7 +7,7 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 import { Message } from "../../types/chat";
 import { mcpClient } from "../mcp/client";
 import { logDebug, logError } from "../../utils/errorHandler";
-import { createChatWorkflow, LangGraphChatWorkflow } from "../langgraph/workflow";
+import { createChatWorkflow, LangGraphChatWorkflow, ProgressCallback } from "../langgraph/workflow";
 import { createKuzuMemoryTools } from "../langgraph/kuzuTools";
 
 const DEFAULT_MODEL = "gpt-4o";
@@ -34,6 +34,8 @@ export class OpenAIService {
   private temperature: number = 0.7;
   private maxTokens: number = 1000;
   private customEndpoint?: string;
+  private maxToolIterations?: number;
+  private progressCallback?: ProgressCallback;
   private workflow: LangGraphChatWorkflow | null = null;
   private memoryTools: StructuredToolInterface[] | null = null;
 
@@ -83,6 +85,22 @@ export class OpenAIService {
     this.workflow = null; // エンドポイント変更時にワークフローをリセット
   }
 
+  /**
+   * 最大ツールイテレーション回数を設定
+   */
+  setMaxToolIterations(maxToolIterations?: number): void {
+    this.maxToolIterations = maxToolIterations;
+    this.workflow = null; // パラメータ変更時にワークフローをリセット
+  }
+
+  /**
+   * プログレスコールバックを設定
+   */
+  setProgressCallback(callback?: ProgressCallback): void {
+    this.progressCallback = callback;
+    this.workflow = null; // パラメータ変更時にワークフローをリセット
+  }
+
   private resolveTools(provider: "openai" | "gemini"): StructuredToolInterface[] | undefined {
     if (provider !== "openai") {
       return undefined;
@@ -107,7 +125,9 @@ export class OpenAIService {
         this.temperature,
         this.maxTokens,
         this.customEndpoint,
-        this.resolveTools(provider)
+        this.resolveTools(provider),
+        this.maxToolIterations,
+        this.progressCallback
       );
     }
   }

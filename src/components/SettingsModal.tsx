@@ -824,6 +824,38 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
             </div>
           </details>
 
+          {/* LangGraph設定 */}
+          <details className="border-t border-gray-800 pt-4">
+            <summary className="text-white font-light uppercase tracking-wider text-sm cursor-pointer hover:text-gray-400 transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-black rounded px-2 py-1 -mx-2">
+              LangGraph Configuration
+            </summary>
+            <div className="mt-4 space-y-4">
+              {/* Max Tool Iterations */}
+              <div className="space-y-2">
+                <label
+                  htmlFor="max-tool-iterations-input"
+                  className="text-white font-light uppercase tracking-wider text-sm block"
+                >
+                  Max Tool Iterations
+                </label>
+                <input
+                  id="max-tool-iterations-input"
+                  type="number"
+                  min="1"
+                  max="100"
+                  step="1"
+                  value={settings.maxToolIterations || 20}
+                  onChange={(e) => setSettings({ ...settings, maxToolIterations: Number(e.target.value) })}
+                  className="w-full bg-black border border-gray-700 text-white px-4 py-2 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
+                />
+                <p className="text-xs text-gray-600">
+                  Maximum number of tool call iterations before the agent workflow stops. Default: 20.
+                  Higher values allow more complex reasoning chains but may increase latency and cost.
+                </p>
+              </div>
+            </div>
+          </details>
+
         </div>
 
         {/* フッター */}

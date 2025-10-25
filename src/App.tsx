@@ -237,6 +237,37 @@ function App() {
         customService.setCustomEndpoint(settings.customOpenAIEndpoint);
       }
 
+      // LangGraph最大イテレーション回数を設定
+      if (settings.maxToolIterations !== undefined) {
+        customService.setMaxToolIterations(settings.maxToolIterations);
+      }
+
+      // プレースホルダーID用の変数（コールバックで使用）
+      let currentPlaceholderId = "";
+
+      // プログレスコールバックを設定して進捗を表示
+      customService.setProgressCallback((progress) => {
+        if (!currentPlaceholderId) return;
+
+        setChatState((prev) => {
+          const updatedMessages = prev.messages.map((msg) => {
+            if (msg.id === currentPlaceholderId && msg.role === "assistant") {
+              return {
+                ...msg,
+                progress: {
+                  iteration: progress.iteration,
+                  maxIterations: progress.maxIterations,
+                  currentTool: progress.currentTool,
+                  status: progress.status,
+                },
+              };
+            }
+            return msg;
+          });
+          return { ...prev, messages: updatedMessages };
+        });
+      });
+
       const systemPromptText = buildSystemPrompt(
         promptSettings,
         chatState.messages.length + 1
@@ -258,11 +289,32 @@ function App() {
 
       const messagesWithPrompt = [systemMessage, ...chatState.messages, userMessage];
 
+      // プレースホルダーのアシスタントメッセージを追加（プログレス表示用）
+      const placeholderId = `${MESSAGE_ID_PREFIX.ASSISTANT}-${Date.now()}`;
+      currentPlaceholderId = placeholderId; // コールバックで使用するためにIDを保存
+
+      const placeholderMessage: Message = {
+        id: placeholderId,
+        role: "assistant",
+        content: "",
+        timestamp: Date.now(),
+        progress: {
+          iteration: 0,
+          maxIterations: settings.maxToolIterations || 20,
+          status: "Starting...",
+        },
+      };
+
+      setChatState((prev) => ({
+        ...prev,
+        messages: [...prev.messages, placeholderMessage],
+      }));
+
       const response = await customService.chat(messagesWithPrompt, settings.aiProvider);
 
       // タイプライター効果でユーザー体験を向上させるため、isTypingフラグを有効化
       const assistantMessage: Message = {
-        id: `${MESSAGE_ID_PREFIX.ASSISTANT}-${Date.now()}`,
+        id: placeholderId,
         role: "assistant",
         content: response,
         timestamp: Date.now(),
@@ -271,7 +323,9 @@ function App() {
 
       setChatState((prev) => ({
         ...prev,
-        messages: [...prev.messages, assistantMessage],
+        messages: prev.messages.map((msg) =>
+          msg.id === placeholderId ? assistantMessage : msg
+        ),
         isProcessing: false,
       }));
 

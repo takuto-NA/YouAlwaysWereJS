@@ -43,12 +43,23 @@ interface ModelCallResult {
   newMessages: BaseMessage[];
 }
 
+export interface ProgressUpdate {
+  iteration: number;
+  maxIterations: number;
+  currentTool?: string;
+  status: string;
+}
+
+export type ProgressCallback = (progress: ProgressUpdate) => void;
+
 export class LangGraphChatWorkflow {
   private readonly provider: AIProvider;
   private readonly model: ChatModel;
   private readonly compiledGraph: ReturnType<LangGraphChatWorkflow["createGraph"]>;
   private readonly tools: StructuredToolInterface[];
   private readonly toolMap: Map<string, StructuredToolInterface>;
+  private readonly maxToolIterations: number;
+  private progressCallback?: ProgressCallback;
 
   constructor(
     provider: AIProvider,
@@ -57,11 +68,15 @@ export class LangGraphChatWorkflow {
     temperature?: number,
     maxTokens?: number,
     customEndpoint?: string,
-    tools?: StructuredToolInterface[]
+    tools?: StructuredToolInterface[],
+    maxToolIterations?: number,
+    progressCallback?: ProgressCallback
   ) {
     this.provider = provider;
     this.tools = tools?.length ? tools : [];
     this.toolMap = new Map(this.tools.map((tool) => [tool.name, tool]));
+    this.maxToolIterations = maxToolIterations ?? MAX_TOOL_ITERATIONS;
+    this.progressCallback = progressCallback;
     this.model = this.createModel(
       provider,
       apiKey,
@@ -350,7 +365,14 @@ export class LangGraphChatWorkflow {
     const conversation: BaseMessage[] = [...initialMessages];
     const appended: BaseMessage[] = [];
 
-    for (let iteration = 0; iteration < MAX_TOOL_ITERATIONS; iteration += 1) {
+    for (let iteration = 0; iteration < this.maxToolIterations; iteration += 1) {
+      // プログレス通知: AI思考中
+      this.progressCallback?.({
+        iteration: iteration + 1,
+        maxIterations: this.maxToolIterations,
+        status: `Thinking... (${iteration + 1}/${this.maxToolIterations})`,
+      });
+
       const response = await this.invokeChatModel(conversation, providerName);
       const aiMessage = response;
       appended.push(aiMessage);
@@ -360,6 +382,12 @@ export class LangGraphChatWorkflow {
 
       if (toolCalls.length === 0) {
         const content = this.extractContentFromResponse(aiMessage, providerName);
+        // プログレス通知: 完了
+        this.progressCallback?.({
+          iteration: iteration + 1,
+          maxIterations: this.maxToolIterations,
+          status: "Completed",
+        });
         return {
           responseText: content,
           newMessages: appended,
@@ -370,7 +398,7 @@ export class LangGraphChatWorkflow {
     }
 
     throw new Error(
-      `Tool interaction exceeded ${MAX_TOOL_ITERATIONS} iterations without producing a final response.`
+      `Tool interaction exceeded ${this.maxToolIterations} iterations without producing a final response.`
     );
   }
 
@@ -385,6 +413,15 @@ export class LangGraphChatWorkflow {
   ): Promise<void> {
     for (const call of toolCalls) {
       const toolName = call.name ?? call.id ?? "unknown_tool";
+
+      // プログレス通知: ツール実行中
+      this.progressCallback?.({
+        iteration: iteration + 1,
+        maxIterations: this.maxToolIterations,
+        currentTool: toolName,
+        status: `Executing tool: ${toolName}`,
+      });
+
       const tool = this.toolMap.get(toolName);
 
       if (!tool) {
@@ -604,8 +641,10 @@ export function createChatWorkflow(
   temperature?: number,
   maxTokens?: number,
   customEndpoint?: string,
-  tools?: StructuredToolInterface[]
+  tools?: StructuredToolInterface[],
+  maxToolIterations?: number,
+  progressCallback?: ProgressCallback
 ): LangGraphChatWorkflow {
-  return new LangGraphChatWorkflow(provider, apiKey, model, temperature, maxTokens, customEndpoint, tools);
+  return new LangGraphChatWorkflow(provider, apiKey, model, temperature, maxTokens, customEndpoint, tools, maxToolIterations, progressCallback);
 }
 

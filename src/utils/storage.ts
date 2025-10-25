@@ -61,6 +61,7 @@ const CORRUPT_PROMPT_WARNING = "Stored prompt settings JSON was corrupt. Clearin
  */
 const DEFAULT_TEMPERATURE = 0.7;
 const DEFAULT_MAX_TOKENS = 4000;
+const DEFAULT_MAX_TOOL_ITERATIONS = 20;
 
 /** サポートされているAIプロバイダー */
 export type AIProvider = "openai" | "gemini";
@@ -93,6 +94,8 @@ export interface AppSettings {
   temperature?: number;
   /** AI応答の最大トークン数 */
   maxTokens?: number;
+  /** LangGraphツール実行の最大イテレーション回数 */
+  maxToolIterations?: number;
 }
 
 /**
@@ -111,6 +114,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   autoScroll: true,
   temperature: DEFAULT_TEMPERATURE,
   maxTokens: DEFAULT_MAX_TOKENS,
+  maxToolIterations: DEFAULT_MAX_TOOL_ITERATIONS,
 };
 
 /**

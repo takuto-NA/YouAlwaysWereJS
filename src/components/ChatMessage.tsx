@@ -367,6 +367,38 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
         </div>
 
         <div className={`chat-message__body chat-message__body--${role}`}>
+          {/* プログレス表示 */}
+          {message.progress && (!message.content || message.content.length === 0) && (
+            <div className="flex flex-col gap-2 p-3 bg-black border border-gray-700 text-xs font-mono">
+              <div className="flex items-center justify-between">
+                <span className="text-gray-600 uppercase tracking-wider font-light">LangGraph Progress</span>
+                <span className="text-white font-medium">
+                  {message.progress.iteration}/{message.progress.maxIterations}
+                </span>
+              </div>
+              <div className="w-full bg-gray-800 h-1">
+                <div
+                  className="bg-gray-400 h-1 transition-all duration-300"
+                  style={{
+                    width: `${(message.progress.iteration / message.progress.maxIterations) * 100}%`,
+                  }}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex gap-1">
+                  <span className="inline-block w-1 h-1 bg-gray-400 rounded-full animate-pulse" />
+                  <span className="inline-block w-1 h-1 bg-gray-400 rounded-full animate-pulse delay-75" />
+                  <span className="inline-block w-1 h-1 bg-gray-400 rounded-full animate-pulse delay-150" />
+                </div>
+                <span className="text-gray-400">{message.progress.status}</span>
+              </div>
+              {message.progress.currentTool && (
+                <div className="text-gray-600">
+                  Tool: <span className="text-white font-medium">{message.progress.currentTool}</span>
+                </div>
+              )}
+            </div>
+          )}
           <div className="chat-message__markdown">{renderedBlocks}</div>
           {isTyping && shouldUseTypewriter && (
             <span className="chat-message__cursor" aria-hidden="true" />
