@@ -1,3 +1,17 @@
+/**
+ * Memory Manager Modal Component
+ *
+ * @description
+ * Kuzuグラフデータベースの管理インターフェースを提供するモーダルコンポーネント。
+ * テーブル一覧の表示、スキーマ確認、データプレビュー、Cypherクエリ実行、
+ * およびデータベースのエクスポート/インポート/初期化機能を提供する。
+ *
+ * @why
+ * - ユーザーがメモリ内のグラフデータベースを視覚的に管理・確認できるようにする
+ * - 開発者がデータ構造を理解し、Cypherクエリをテストできる環境を提供する
+ * - データベースのバックアップ/復元機能により、データの永続化と移行を可能にする
+ */
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CircleStackIcon,
@@ -42,7 +56,14 @@ MATCH (u:User)-[f:Follows]->(v:User)
 RETURN u, f, v
 LIMIT 10`;
 
-// インポート後のキャッシュクリア反映待機時間（ミリ秒）
+/**
+ * インポート後のキャッシュクリア反映待機時間（ミリ秒）
+ *
+ * @why
+ * データベースインポート後、KuzuDBインスタンスキャッシュがクリアされるが、
+ * 非同期処理のため即座に反映されない場合がある。短い遅延を設けることで
+ * 次回のDB操作時に確実に新しいデータベースが読み込まれるようにする。
+ */
 const IMPORT_CACHE_CLEAR_DELAY_MS = 100;
 
 function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
@@ -321,6 +342,14 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
     }
   };
 
+  /**
+   * データベースインポート処理
+   *
+   * @why
+   * ユーザーがバックアップしたデータベースを復元できるようにする。
+   * インポート後は短い遅延を設けてキャッシュクリアを確実に反映させ、
+   * UIに新しいデータベースの内容が正しく表示されるようにする。
+   */
   const handleImportDatabase = async () => {
     if (!pendingImportFile || importStatus.loading) return;
     setShowImportConfirmDialog(false);
@@ -399,7 +428,7 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
               className="flex items-center gap-2 rounded border border-blue-600 px-3 py-2 text-xs uppercase tracking-wider text-blue-300 transition hover:border-blue-500 hover:bg-blue-900/20 hover:text-blue-200 disabled:cursor-not-allowed disabled:border-gray-700 disabled:text-gray-600"
               title="データベースをファイルとしてエクスポート"
             >
-              <ArrowDownTrayIcon className="h-4 w-4" />
+              <ArrowUpTrayIcon className="h-4 w-4" />
               Export
             </button>
             <button
@@ -409,7 +438,7 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
               className="flex items-center gap-2 rounded border border-green-600 px-3 py-2 text-xs uppercase tracking-wider text-green-300 transition hover:border-green-500 hover:bg-green-900/20 hover:text-green-200 disabled:cursor-not-allowed disabled:border-gray-700 disabled:text-gray-600"
               title="データベースファイルをインポート"
             >
-              <ArrowUpTrayIcon className="h-4 w-4" />
+              <ArrowDownTrayIcon className="h-4 w-4" />
               Import
             </button>
             <input
