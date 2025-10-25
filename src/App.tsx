@@ -1,6 +1,22 @@
 /**
- * チャットアプリケーションのメインコンポーネント
- * LangGraphとOpenAI APIを使用してMCP経由で対話
+ * AIチャットアプリケーションのメインコンポーネント
+ *
+ * @description
+ * OpenAI互換API（OpenAI、Groq、Gemini、LM Studio等）と統合されたチャットインターフェース。
+ * 複数のAIプロバイダーをサポートし、カスタマイズ可能なプロンプト、表示モード、
+ * Kuzuグラフデータベースを用いた長期記憶機能を提供する。
+ *
+ * @features
+ * - マルチプロバイダー対応（OpenAI、Groq、Gemini、LM Studio）
+ * - リアルタイムタイプライターエフェクト
+ * - カスタマイズ可能なシステムプロンプト
+ * - 通常/ノベル/デバッグの3つの表示モード
+ * - Kuzuグラフデータベースによる長期記憶管理
+ *
+ * @see SettingsModal - AI設定管理
+ * @see PromptEditorModal - プロンプトカスタマイズ
+ * @see DisplaySettingsModal - 表示モード切り替え
+ * @see MemoryManagerModal - 記憶データ管理
  */
 import { useState, useRef, useEffect, useCallback } from "react";
 import { Cog6ToothIcon, SparklesIcon, RectangleStackIcon, CircleStackIcon } from "@heroicons/react/24/outline";
@@ -19,6 +35,14 @@ import { logError, logDebug } from "./utils/errorHandler";
 import { loadSettings, hasApiKey, AppSettings, loadPromptSettings, loadDisplaySettings } from "./utils/storage";
 import { buildSystemPrompt } from "./utils/promptBuilder";
 import { ANIMATION_DELAYS } from "./constants/animations";
+import {
+  MESSAGE_ID_PREFIX,
+  INITIAL_SYSTEM_MESSAGE_ID,
+  RESET_SYSTEM_MESSAGE_ID,
+  SYSTEM_PROMPT_MESSAGE_ID,
+  DISPLAY_MODE_LABELS,
+  AI_PROVIDER_LABELS,
+} from "./constants/app";
 
 function App() {
   const [chatState, setChatState] = useState<ChatState>({
@@ -35,16 +59,15 @@ function App() {
   const [isSplashVisible, setIsSplashVisible] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // 初期化と設定チェック
+  // アプリ起動時にAPIキー設定状態を確認し、適切な初期メッセージを表示するため
   useEffect(() => {
     const savedSettings = loadSettings();
     setSettings(savedSettings);
 
-    // APIキーが設定されているかチェック
     const hasKey = hasApiKey();
 
     const initialMessage: Message = {
-      id: "system-1",
+      id: INITIAL_SYSTEM_MESSAGE_ID,
       role: "system",
       content: hasKey
         ? "システム起動完了。OpenAI互換API経由でMCPを使用した対話が可能です。"
@@ -65,12 +88,16 @@ function App() {
     });
   }, []);
 
+  /**
+   * AI設定の保存処理
+   * 新しい設定を適用し、保存成功のシステムメッセージを追加する
+   */
   const handleSettingsSave = (newSettings: AppSettings) => {
     setSettings(newSettings);
 
-    // APIキーが新たに設定された場合、メッセージを追加
+    // ユーザーに設定保存の成功をフィードバックするため
     const successMessage: Message = {
-      id: `system-${Date.now()}`,
+      id: `${MESSAGE_ID_PREFIX.SYSTEM}-${Date.now()}`,
       role: "system",
       content: "SAVED: 設定を保存しました。チャットを開始できます。",
       timestamp: Date.now(),
@@ -83,11 +110,15 @@ function App() {
     }));
   };
 
+  /**
+   * プロンプト設定の保存処理
+   * カスタムシステムプロンプトを更新し、保存成功メッセージを表示する
+   */
   const handlePromptSettingsSave = (newPromptSettings: PromptSettings) => {
     setPromptSettings(newPromptSettings);
 
     const successMessage: Message = {
-      id: `system-${Date.now()}`,
+      id: `${MESSAGE_ID_PREFIX.SYSTEM}-${Date.now()}`,
       role: "system",
       content: "SAVED: プロンプト設定を保存しました。",
       timestamp: Date.now(),
@@ -100,13 +131,18 @@ function App() {
     }));
   };
 
+  /**
+   * 表示設定の保存処理
+   * 表示モード（通常/ノベル/デバッグ）を切り替え、変更内容を通知する
+   */
   const handleDisplaySettingsSave = (newDisplaySettings: DisplaySettings) => {
     setDisplaySettings(newDisplaySettings);
 
+    const modeLabel = DISPLAY_MODE_LABELS[newDisplaySettings.mode] || newDisplaySettings.mode;
     const successMessage: Message = {
-      id: `system-${Date.now()}`,
+      id: `${MESSAGE_ID_PREFIX.SYSTEM}-${Date.now()}`,
       role: "system",
-      content: `SAVED: 表示モードを「${newDisplaySettings.mode === "normal" ? "通常モード" : newDisplaySettings.mode === "novel" ? "ノベルモード" : "デバッグモード"}」に変更しました。`,
+      content: `SAVED: 表示モードを「${modeLabel}」に変更しました。`,
       timestamp: Date.now(),
       isTyping: false,
     };
@@ -127,15 +163,22 @@ function App() {
     scrollToBottom();
   }, [chatState.messages, scrollToBottom]);
 
+  /**
+   * ユーザーメッセージ送信処理
+   * APIキーの検証、メッセージ送信、AI応答の受信、エラーハンドリングを行う
+   *
+   * @param content - ユーザーが入力したメッセージ内容
+   */
   const handleSendMessage = async (content: string) => {
-    // APIキーチェック（プロバイダーに応じて）
+    // 選択されたプロバイダーに応じて適切なAPIキーを使用するため
     const currentApiKey =
       settings.aiProvider === "openai" ? settings.openaiApiKey : settings.geminiApiKey;
-    const providerName = settings.aiProvider === "openai" ? "OpenAI/Groq" : "Gemini";
+    const providerName = AI_PROVIDER_LABELS[settings.aiProvider];
 
+    // APIキー未設定時は早期リターンでエラーを明示し、不要なAPI呼び出しを防ぐため
     if (!currentApiKey) {
       const errorMessage: Message = {
-        id: `error-${Date.now()}`,
+        id: `${MESSAGE_ID_PREFIX.ERROR}-${Date.now()}`,
         role: "system",
         content: `WARNING: ${providerName} APIキーが設定されていません。右上の設定ボタンから設定してください。`,
         timestamp: Date.now(),
@@ -148,9 +191,8 @@ function App() {
       return;
     }
 
-    // ユーザーメッセージを追加
     const userMessage: Message = {
-      id: `user-${Date.now()}`,
+      id: `${MESSAGE_ID_PREFIX.USER}-${Date.now()}`,
       role: "user",
       content,
       timestamp: Date.now(),
@@ -173,7 +215,7 @@ function App() {
         messageCount: chatState.messages.length + 1,
       });
 
-      // 設定からプロバイダー、APIキー、モデルを使用してAI APIを呼び出し
+      // 動的import: ビルドサイズ削減とコード分割のため必要時のみロード
       const currentApiKey =
         settings.aiProvider === "openai" ? settings.openaiApiKey : settings.geminiApiKey;
       const currentModel =
@@ -188,38 +230,37 @@ function App() {
         settings.maxTokens
       );
 
-      // カスタムエンドポイントが設定されている場合は適用（LM Studio対応）
+      // LM Studioなどのローカル環境に接続できるようにするため
       if (settings.aiProvider === "openai" && settings.customOpenAIEndpoint) {
         customService.setCustomEndpoint(settings.customOpenAIEndpoint);
       }
 
-      // システムプロンプトを構築
       const systemPromptText = buildSystemPrompt(
         promptSettings,
         chatState.messages.length + 1
       );
 
+      // OpenAIのみFunction Calling経由でKuzuツールにアクセス可能なため条件分岐
       const memoryToolInstructions =
         settings.aiProvider === "openai"
           ? "\n\n[Memory Tools]\n- Use `kuzu_list_tables` to enumerate available graph tables.\n- Use `kuzu_describe_table` to inspect schemas and review sample rows before modifying data.\n- Use `kuzu_query` to read, insert, update, or delete data. Always include a reasonable LIMIT when reading and never assume results without querying.\n- Treat the database as the source of truth for long-term memory."
           : "";
 
-      // システムプロンプトをメッセージの最初に追加
+      // AIに会話履歴とコンテキストを提供するため、システムプロンプトを先頭に配置
       const systemMessage: Message = {
-        id: "system-prompt",
+        id: SYSTEM_PROMPT_MESSAGE_ID,
         role: "system",
         content: `${systemPromptText}${memoryToolInstructions}`,
         timestamp: Date.now(),
       };
 
-      // システムメッセージ + 会話履歴 + ユーザーメッセージ
       const messagesWithPrompt = [systemMessage, ...chatState.messages, userMessage];
 
       const response = await customService.chat(messagesWithPrompt, settings.aiProvider);
 
-      // AIレスポンスを追加（タイプライター効果を有効化）
+      // タイプライター効果でユーザー体験を向上させるため、isTypingフラグを有効化
       const assistantMessage: Message = {
-        id: `assistant-${Date.now()}`,
+        id: `${MESSAGE_ID_PREFIX.ASSISTANT}-${Date.now()}`,
         role: "assistant",
         content: response,
         timestamp: Date.now(),
@@ -240,12 +281,11 @@ function App() {
         attemptedAction: "handleSendMessage",
       });
 
-      // エラーメッセージをより詳細に
+      // ユーザーが問題を自己解決できるよう、エラー種別に応じた具体的なヒントを提供するため
       let errorText = "不明なエラーが発生しました";
       if (error instanceof Error) {
         errorText = error.message;
-        
-        // よくあるエラーパターンに対して具体的なアドバイスを追加
+
         if (errorText.includes("API key") || errorText.includes("APIキー")) {
           errorText += "\n\n💡 設定画面からAPIキーを確認してください。";
         } else if (errorText.includes("カスタムエンドポイント") || errorText.includes("接続に失敗")) {
@@ -258,7 +298,7 @@ function App() {
       }
 
       const errorMessage: Message = {
-        id: `error-${Date.now()}`,
+        id: `${MESSAGE_ID_PREFIX.ERROR}-${Date.now()}`,
         role: "system",
         content: `❌ エラー: ${errorText}`,
         timestamp: Date.now(),
@@ -274,11 +314,15 @@ function App() {
     }
   };
 
+  /**
+   * 会話履歴のクリア処理
+   * 全てのメッセージを削除し、リセット通知のシステムメッセージのみを残す
+   */
   const handleClearHistory = () => {
     setChatState({
       messages: [
         {
-          id: "system-reset",
+          id: RESET_SYSTEM_MESSAGE_ID,
           role: "system",
           content: "会話履歴がクリアされました。",
           timestamp: Date.now(),
