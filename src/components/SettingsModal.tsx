@@ -60,8 +60,8 @@ const MODEL_PRESETS: ModelPreset[] = [
     supportsReasoningToggle: true,
   },
   {
-    value: "moonshotai/kimi-k2-instruct-090",
-    label: "moonshotai/kimi-k2-instruct-090 — Kimi K2 Instruct",
+    value: "moonshotai/kimi-k2-instruct-0905",
+    label: "moonshotai/kimi-k2-instruct-0905 — Kimi K2 Instruct",
     group: "Moonshot",
     description: "Strong multilingual instruction model with wide context window.",
   },
