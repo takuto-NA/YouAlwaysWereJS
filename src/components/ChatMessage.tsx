@@ -337,9 +337,9 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
         <div className="chat-message__header">
           <div className="flex items-center gap-2">
             {isUser ? (
-              <UserIcon className="h-5 w-5" />
+              <UserIcon className="h-5 w-5 text-gray-600" />
             ) : (
-              <CpuChipIcon className="h-5 w-5" />
+              <CpuChipIcon className="h-5 w-5 text-gray-600" />
             )}
             <span className={`chat-message__label chat-message__label--${role}`}>{label}</span>
           </div>
@@ -353,14 +353,14 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
             )}
             <button
               onClick={handleCopy}
-              className="p-1 rounded hover:bg-gray-700/50 transition-colors"
+              className="p-1 rounded hover:bg-gray-700/50 transition-colors group"
               aria-label="メッセージをコピー"
               title={isCopied ? "コピーしました" : "メッセージをコピー"}
             >
               {isCopied ? (
-                <ClipboardDocumentCheckIcon className="h-4 w-4 text-green-400" />
+                <ClipboardDocumentCheckIcon className="h-4 w-4 text-green-500" />
               ) : (
-                <ClipboardDocumentIcon className="h-4 w-4" />
+                <ClipboardDocumentIcon className="h-4 w-4 text-gray-600 group-hover:text-gray-400 transition-colors" />
               )}
             </button>
           </div>
