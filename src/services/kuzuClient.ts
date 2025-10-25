@@ -763,20 +763,7 @@ async function listTablesViaLabelScan(conn: KuzuConnection): Promise<TableInfo[]
        ORDER BY tableName`,
     ];
 
-    for (const query of relQueries) {
-      try {
-        relResult = await runQuery(conn, query);
-        if (relResult.rows && relResult.rows.length > 0) {
-          logDebug(KUZU_LOG_CONTEXT, "Retrieved relationship types", {
-            count: relResult.rows.length,
-          });
-          break;
-        }
-      } catch (error) {
-        logDebug(KUZU_LOG_CONTEXT, "Failed to list rel types with query", { query, error });
-        continue;
-      }
-    }
+    relResult = await tryQueries(conn, relQueries, "relationship types");
 
     if (!relResult || relResult.rows.length === 0) {
       logWarning(KUZU_LOG_CONTEXT, "Failed to list rel types, falling back to nodes only");
@@ -1416,75 +1403,106 @@ function extractCount(rows: QueryRow[]): number {
 
 
 
+/**
+ * 複数のクエリを順に試し、最初に成功したものを返す
+ * @param conn KuzuConnection
+ * @param queries 試すクエリの配列
+ * @param context ログ用コンテキスト
+ * @returns 成功したクエリの結果、またはnull
+ */
+async function tryQueries(
+  conn: KuzuConnection,
+  queries: string[],
+  context: string
+): Promise<QueryResult | null> {
+  for (const query of queries) {
+    try {
+      const result = await runQuery(conn, query);
+      if (result.rows && result.rows.length > 0) {
+        logDebug(KUZU_LOG_CONTEXT, `Query succeeded: ${context}`, { query });
+        return result;
+      }
+    } catch (error) {
+      logDebug(KUZU_LOG_CONTEXT, `Query failed: ${context}`, { query, error });
+    }
+  }
+  return null;
+}
+
+/**
+ * labels配列から個別のラベル名を抽出して一意化する
+ */
+function extractUniqueLabels(rows: QueryRow[]): QueryRow[] {
+  const extracted: QueryRow[] = [];
+  for (const row of rows) {
+    const labelsVec = row.labelsVec ?? row["labelsVec"] ?? row["labels(n)"];
+    if (Array.isArray(labelsVec)) {
+      for (const label of labelsVec) {
+        const name = extractString(label);
+        if (name) {
+          extracted.push({ tableName: name });
+        }
+      }
+    } else {
+      const name = extractString(labelsVec);
+      if (name) {
+        extracted.push({ tableName: name });
+      }
+    }
+  }
+
+  const unique = new Map<string, QueryRow>();
+  for (const row of extracted) {
+    const name = extractString(row.tableName);
+    if (name && !unique.has(name)) {
+      unique.set(name, { tableName: name });
+    }
+  }
+
+  return Array.from(unique.values());
+}
+
+/**
+ * Uint8Arrayのチェックサムを計算
+ * @param data チェックサム計算対象のデータ
+ * @returns チェックサム値
+ */
+function calculateChecksum(data: Uint8Array): number {
+  let checksum = 0;
+  for (let i = 0; i < data.length; i++) {
+    checksum = (checksum + data[i]) % 0x100000000;
+  }
+  return checksum;
+}
+
 async function runLabelQuery(conn: KuzuConnection): Promise<QueryResult> {
   // 複数の戦略を試す: labels()関数は一部のDBで型変換エラーを起こすため、
   // より単純なクエリから試す
+  const queries = [
+    // 戦略1: label()関数で個別にラベルを取得（配列ではなく単一の文字列）
+    `MATCH (n)
+     RETURN DISTINCT label(n) AS tableName
+     ORDER BY tableName`,
+    // 戦略2: labels()関数を使った従来の方法（配列処理）
+    `MATCH (n)
+     WITH labels(n) AS labelsVec
+     WHERE labelsVec IS NOT NULL AND labelsVec <> []
+     RETURN DISTINCT labelsVec`,
+  ];
 
-  // 戦略1: label()関数で個別にラベルを取得（配列ではなく単一の文字列）
-  try {
-    const result = await runQuery(
-      conn,
-      `MATCH (n)
-       RETURN DISTINCT label(n) AS tableName
-       ORDER BY tableName`
-    );
+  const result = await tryQueries(conn, queries, "node labels");
 
-    if (result.rows && result.rows.length > 0) {
-      logDebug(KUZU_LOG_CONTEXT, "Retrieved node labels using label() function", {
-        count: result.rows.length,
-      });
-      return { columns: ["tableName"], rows: result.rows };
+  if (result) {
+    // labels()関数（配列）の場合は展開が必要
+    if (result.rows[0]?.labelsVec !== undefined) {
+      const extractedRows = extractUniqueLabels(result.rows);
+      return { columns: ["tableName"], rows: extractedRows };
     }
-  } catch (error) {
-    // label()が使えない場合は次の戦略へ
-    logDebug(KUZU_LOG_CONTEXT, "label() function not available", { error });
+    return { columns: ["tableName"], rows: result.rows };
   }
 
-  // 戦略2: labels()関数を使った従来の方法（配列処理）
-  try {
-    const result = await runQuery(
-      conn,
-      `MATCH (n)
-       WITH labels(n) AS labelsVec
-       WHERE labelsVec IS NOT NULL AND labelsVec <> []
-       RETURN DISTINCT labelsVec`
-    );
-
-    if (!result.rows || result.rows.length === 0) {
-      return { columns: ["tableName"], rows: [] };
-    }
-
-    const rows: QueryRow[] = [];
-    for (const row of result.rows) {
-      const labelsVec = row.labelsVec ?? row["labelsVec"] ?? row["labels(n)"];
-      if (Array.isArray(labelsVec)) {
-        for (const label of labelsVec) {
-          const name = extractString(label);
-          if (name) {
-            rows.push({ tableName: name });
-          }
-        }
-      } else {
-        const name = extractString(labelsVec);
-        if (name) {
-          rows.push({ tableName: name });
-        }
-      }
-    }
-
-    const unique = new Map<string, QueryRow>();
-    for (const row of rows) {
-      const name = extractString(row.tableName);
-      if (name && !unique.has(name)) {
-        unique.set(name, { tableName: name });
-      }
-    }
-
-    return { columns: ["tableName"], rows: Array.from(unique.values()) };
-  } catch (error) {
-    logWarning(KUZU_LOG_CONTEXT, "runLabelQuery failed, returning empty result", { error });
-    return { columns: ["tableName"], rows: [] };
-  }
+  logWarning(KUZU_LOG_CONTEXT, "runLabelQuery failed, returning empty result");
+  return { columns: ["tableName"], rows: [] };
 }
 
 async function removeStaleDatabaseFile(kuzu: KuzuModule) {
@@ -1679,10 +1697,7 @@ export async function exportDatabase(): Promise<Blob> {
     const dbFile = dbFiles[0];
 
     // バイナリデータのチェックサムを計算
-    let dataChecksum = 0;
-    for (let i = 0; i < dbFile.data.length; i++) {
-      dataChecksum = (dataChecksum + dbFile.data[i]) % 0x100000000;
-    }
+    const dataChecksum = calculateChecksum(dbFile.data);
     console.log("Export data checksum (original):", dataChecksum);
 
     // メタデータとバイナリデータを分離
@@ -1709,11 +1724,9 @@ export async function exportDatabase(): Promise<Blob> {
     combined.set(dbFile.data, 4 + metadataBytes.length);
 
     // 結合後のバイナリ部分のチェックサムを確認
-    let combinedChecksum = 0;
     const dataOffset = 4 + metadataBytes.length;
-    for (let i = 0; i < dbFile.data.length; i++) {
-      combinedChecksum = (combinedChecksum + combined[dataOffset + i]) % 0x100000000;
-    }
+    const combinedDataPortion = new Uint8Array(combined.buffer, dataOffset, dbFile.data.length);
+    const combinedChecksum = calculateChecksum(combinedDataPortion);
     console.log("Export data checksum (in combined):", combinedChecksum);
     console.log("Checksums match after combining:", dataChecksum === combinedChecksum);
 
@@ -1775,10 +1788,7 @@ export async function importDatabase(file: Blob): Promise<void> {
     }
 
     // Blob読み込み後のチェックサムを計算
-    let blobChecksum = 0;
-    for (let i = 0; i < dbData.length; i++) {
-      blobChecksum = (blobChecksum + dbData[i]) % 0x100000000;
-    }
+    const blobChecksum = calculateChecksum(dbData);
     console.log("Import checksum (from blob):", blobChecksum);
 
     if (metadata.checksum !== undefined) {
@@ -1815,10 +1825,7 @@ export async function importDatabase(file: Blob): Promise<void> {
     console.log("✅ File written");
 
     // 書き込んだデータのチェックサム
-    let checksumBefore = 0;
-    for (let i = 0; i < dbData.length; i++) {
-      checksumBefore = (checksumBefore + dbData[i]) % 0x100000000;
-    }
+    const checksumBefore = calculateChecksum(dbData);
     console.log("Import checksum (before sync):", checksumBefore);
 
     logDebug(KUZU_LOG_CONTEXT, "Database file written directly", {
@@ -1835,10 +1842,7 @@ export async function importDatabase(file: Blob): Promise<void> {
       const readBackBuffer = await fs.readFile(fullPath);
       const readBackData = new Uint8Array(readBackBuffer);
 
-      let checksumAfter = 0;
-      for (let i = 0; i < readBackData.length; i++) {
-        checksumAfter = (checksumAfter + readBackData[i]) % 0x100000000;
-      }
+      const checksumAfter = calculateChecksum(readBackData);
 
       console.log("Import checksum (after sync, read back):", checksumAfter);
       console.log("Checksum match:", checksumBefore === checksumAfter);
@@ -1913,10 +1917,7 @@ async function readDatabaseDirectory(kuzu: KuzuModule): Promise<DatabaseFileEntr
       console.log("Database header as string:", String.fromCharCode(...header.slice(0, 4)));
 
       // チェックサムを計算（デバッグ用）
-      let checksum = 0;
-      for (let i = 0; i < uint8Array.length; i++) {
-        checksum = (checksum + uint8Array[i]) % 0x100000000;
-      }
+      const checksum = calculateChecksum(uint8Array);
       console.log("Export checksum:", checksum);
 
       logDebug(KUZU_LOG_CONTEXT, "Database file read successfully", {

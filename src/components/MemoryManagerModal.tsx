@@ -42,6 +42,9 @@ MATCH (u:User)-[f:Follows]->(v:User)
 RETURN u, f, v
 LIMIT 10`;
 
+// インポート後のキャッシュクリア反映待機時間（ミリ秒）
+const IMPORT_CACHE_CLEAR_DELAY_MS = 100;
+
 function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
   const [tables, setTables] = useState<TableInfo[]>([]);
   const [tablesState, setTablesState] = useState<LoadingState>({ loading: false, error: null });
@@ -334,7 +337,7 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
       // インポート関数内でKuzuDBインスタンスキャッシュがクリアされる。
       // 短い遅延を入れてから再読み込みすることで、キャッシュクリアが
       // 確実に反映され、次回アクセス時に新しいDBが読み込まれる
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await new Promise((resolve) => setTimeout(resolve, IMPORT_CACHE_CLEAR_DELAY_MS));
       setRefreshToken((value) => value + 1);
     } catch (error) {
       setImportStatus({
