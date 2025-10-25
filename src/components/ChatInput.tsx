@@ -2,6 +2,7 @@
  * チャット入力コンポーネント
  */
 import { useState, KeyboardEvent } from "react";
+import { PaperAirplaneIcon } from "@heroicons/react/24/outline";
 
 interface ChatInputProps {
   onSend: (message: string) => void;
@@ -41,8 +42,9 @@ function ChatInput({ onSend, disabled = false }: ChatInputProps) {
           onClick={handleSend}
           disabled={disabled || !input.trim()}
           className="chat-input-bar__send"
+          aria-label="送信"
         >
-          送信
+          <PaperAirplaneIcon className="h-5 w-5" />
         </button>
       </div>
       <div className="chat-input-bar__hint">Enter: 送信</div>

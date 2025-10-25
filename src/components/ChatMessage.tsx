@@ -3,11 +3,12 @@
  * Plain text animates with a typewriter effect so users sense progress,
  * whereas complex markup (tables/code/images) appears instantly to stay legible.
  */
-import { useMemo, type JSX } from "react";
+import { useMemo, useState, type JSX } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
+import { ClipboardDocumentIcon, ClipboardDocumentCheckIcon, UserIcon, CpuChipIcon } from "@heroicons/react/24/outline";
 import { Message } from "../types/chat";
 import { useTypewriter } from "../hooks/useTypewriter";
 import { DEFAULT_TYPEWRITER_SPEED_MS } from "../constants/typewriter";
@@ -229,8 +230,19 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
   const isUser = message.role === "user";
   const isSystem = message.role === "system";
   const isAssistant = message.role === "assistant";
+  const [isCopied, setIsCopied] = useState(false);
 
   const blocks = useMemo(() => buildMessageBlocks(message.content), [message.content]);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy message:", err);
+    }
+  };
 
   const plainTextContent = useMemo(
     () =>
@@ -323,14 +335,35 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
     <div className={`chat-message chat-message--${role} chat-message--enter`}>
       <div className="chat-message__inner">
         <div className="chat-message__header">
-          <span className={`chat-message__label chat-message__label--${role}`}>{label}</span>
-          {isTyping && (
-            <div className="chat-message__typing" aria-hidden="true">
-              <span className="chat-message__typing-dot" />
-              <span className="chat-message__typing-dot" />
-              <span className="chat-message__typing-dot" />
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            {isUser ? (
+              <UserIcon className="h-5 w-5" />
+            ) : (
+              <CpuChipIcon className="h-5 w-5" />
+            )}
+            <span className={`chat-message__label chat-message__label--${role}`}>{label}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            {isTyping && (
+              <div className="chat-message__typing" aria-hidden="true">
+                <span className="chat-message__typing-dot" />
+                <span className="chat-message__typing-dot" />
+                <span className="chat-message__typing-dot" />
+              </div>
+            )}
+            <button
+              onClick={handleCopy}
+              className="p-1 rounded hover:bg-gray-700/50 transition-colors"
+              aria-label="メッセージをコピー"
+              title={isCopied ? "コピーしました" : "メッセージをコピー"}
+            >
+              {isCopied ? (
+                <ClipboardDocumentCheckIcon className="h-4 w-4 text-green-400" />
+              ) : (
+                <ClipboardDocumentIcon className="h-4 w-4" />
+              )}
+            </button>
+          </div>
         </div>
 
         <div className={`chat-message__body chat-message__body--${role}`}>

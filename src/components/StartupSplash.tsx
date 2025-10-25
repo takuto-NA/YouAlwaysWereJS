@@ -4,6 +4,7 @@
  */
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
+import { BoltIcon } from "@heroicons/react/24/outline";
 import {
   SPLASH_DISPLAY_DURATION_MS,
   SPLASH_FADE_DURATION_MS,
@@ -73,7 +74,10 @@ function StartupSplash({ onComplete }: StartupSplashProps) {
           <div className="splash-scanline" aria-hidden />
         </div>
         <div className={`splash-content ${contentPhaseClass}`}>
-          <span className="splash-header">SYSTEM INITIALIZING</span>
+          <div className="flex items-center justify-center gap-3 mb-4">
+            <BoltIcon className="h-8 w-8 text-cyan-400 animate-pulse" />
+            <span className="splash-header">SYSTEM INITIALIZING</span>
+          </div>
           <h1 className="splash-title">AI INTERFACE</h1>
           <div className="splash-divider" aria-hidden />
           <p className="splash-subtitle">LANGGRAPH CORE · OPENAI LINKED</p>
