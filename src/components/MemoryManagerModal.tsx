@@ -8,6 +8,8 @@ import {
   SparklesIcon,
   TrashIcon,
   ExclamationTriangleIcon,
+  ArrowDownTrayIcon,
+  ArrowUpTrayIcon,
 } from "@heroicons/react/24/outline";
 import {
   describeTable,
@@ -20,6 +22,8 @@ import {
   QueryResult,
   seedDemoData,
   clearDatabase,
+  exportDatabase,
+  importDatabase,
   KUZU_DEMO_FLAG,
 } from "../services/kuzuClient";
 
@@ -60,17 +64,33 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
     message: null,
     error: null,
   });
+  const [exportStatus, setExportStatus] = useState<{ loading: boolean; error: string | null }>({
+    loading: false,
+    error: null,
+  });
+  const [importStatus, setImportStatus] = useState<{ loading: boolean; message: string | null; error: string | null }>({
+    loading: false,
+    message: null,
+    error: null,
+  });
   const [showSeedConfirmDialog, setShowSeedConfirmDialog] = useState(false);
   const [showClearConfirmDialog, setShowClearConfirmDialog] = useState(false);
+  const [showImportConfirmDialog, setShowImportConfirmDialog] = useState(false);
+  const [pendingImportFile, setPendingImportFile] = useState<File | null>(null);
 
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!isOpen) {
       setSeedStatus({ loading: false, message: null, error: null });
       setClearStatus({ loading: false, message: null, error: null });
+      setExportStatus({ loading: false, error: null });
+      setImportStatus({ loading: false, message: null, error: null });
       setShowSeedConfirmDialog(false);
       setShowClearConfirmDialog(false);
+      setShowImportConfirmDialog(false);
+      setPendingImportFile(null);
       return;
     }
 
@@ -267,6 +287,68 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
     }
   };
 
+  const handleExportDatabase = async () => {
+    if (exportStatus.loading) return;
+    setExportStatus({ loading: true, error: null });
+    try {
+      const blob = await exportDatabase();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `kuzu-database-${new Date().toISOString().replace(/[:.]/g, "-")}.kuzudb`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setExportStatus({ loading: false, error: null });
+    } catch (error) {
+      setExportStatus({ loading: false, error: extractMessage(error) });
+    }
+  };
+
+  const handleImportFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      setPendingImportFile(file);
+      setShowImportConfirmDialog(true);
+    }
+    // ファイル入力をリセット（同じファイルを再選択できるように）
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  const handleImportDatabase = async () => {
+    if (!pendingImportFile || importStatus.loading) return;
+    setShowImportConfirmDialog(false);
+    setImportStatus({ loading: true, message: null, error: null });
+    try {
+      await importDatabase(pendingImportFile);
+      setImportStatus({
+        loading: false,
+        message: "Database imported successfully.",
+        error: null,
+      });
+      setPendingImportFile(null);
+
+      // インポート関数内でKuzuDBインスタンスキャッシュがクリアされるため、
+      // テーブルリストを再取得すると新しいデータベースが読み込まれる
+      setRefreshToken((value) => value + 1);
+    } catch (error) {
+      setImportStatus({
+        loading: false,
+        message: null,
+        error: extractMessage(error),
+      });
+      setPendingImportFile(null);
+    }
+  };
+
+  const handleCancelImport = () => {
+    setShowImportConfirmDialog(false);
+    setPendingImportFile(null);
+  };
+
   const handleRefresh = async () => {
     if (tablesState.loading) return;
     setTablesState({ loading: true, error: null });
@@ -304,11 +386,38 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
               </p>
             </div>
           </div>
-          <div className="flex flex-1 items-center justify-end gap-3 md:flex-none">
+          <div className="flex flex-1 flex-wrap items-center justify-end gap-2 md:flex-none">
+            <button
+              type="button"
+              onClick={handleExportDatabase}
+              disabled={exportStatus.loading || importStatus.loading || seedStatus.loading || clearStatus.loading}
+              className="flex items-center gap-2 rounded border border-blue-600 px-3 py-2 text-xs uppercase tracking-wider text-blue-300 transition hover:border-blue-500 hover:bg-blue-900/20 hover:text-blue-200 disabled:cursor-not-allowed disabled:border-gray-700 disabled:text-gray-600"
+              title="データベースをファイルとしてエクスポート"
+            >
+              <ArrowDownTrayIcon className="h-4 w-4" />
+              Export
+            </button>
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={exportStatus.loading || importStatus.loading || seedStatus.loading || clearStatus.loading}
+              className="flex items-center gap-2 rounded border border-green-600 px-3 py-2 text-xs uppercase tracking-wider text-green-300 transition hover:border-green-500 hover:bg-green-900/20 hover:text-green-200 disabled:cursor-not-allowed disabled:border-gray-700 disabled:text-gray-600"
+              title="データベースファイルをインポート"
+            >
+              <ArrowUpTrayIcon className="h-4 w-4" />
+              Import
+            </button>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".kuzudb"
+              onChange={handleImportFileSelect}
+              className="hidden"
+            />
             <button
               type="button"
               onClick={() => setShowSeedConfirmDialog(true)}
-              disabled={seedStatus.loading || clearStatus.loading}
+              disabled={seedStatus.loading || clearStatus.loading || exportStatus.loading || importStatus.loading}
               className="flex items-center gap-2 rounded border border-yellow-600 px-3 py-2 text-xs uppercase tracking-wider text-yellow-300 transition hover:border-yellow-500 hover:bg-yellow-900/20 hover:text-yellow-200 disabled:cursor-not-allowed disabled:border-gray-700 disabled:text-gray-600"
               title="既存データを削除してデモデータを初期化します"
             >
@@ -318,7 +427,7 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
             <button
               type="button"
               onClick={() => setShowClearConfirmDialog(true)}
-              disabled={seedStatus.loading || clearStatus.loading}
+              disabled={seedStatus.loading || clearStatus.loading || exportStatus.loading || importStatus.loading}
               className="flex items-center gap-2 rounded border border-red-600 px-3 py-2 text-xs uppercase tracking-wider text-red-300 transition hover:border-red-500 hover:bg-red-900/20 hover:text-red-200 disabled:cursor-not-allowed disabled:border-gray-700 disabled:text-gray-600"
               title="全てのデータベースデータを削除します"
             >
@@ -328,7 +437,7 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
             <button
               type="button"
               onClick={handleRefresh}
-              disabled={tablesState.loading || seedStatus.loading || clearStatus.loading}
+              disabled={tablesState.loading || seedStatus.loading || clearStatus.loading || exportStatus.loading || importStatus.loading}
               className="flex items-center gap-2 rounded border border-gray-700 px-3 py-2 text-xs uppercase tracking-wider text-gray-400 transition hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:border-gray-700 disabled:text-gray-600"
             >
               <ArrowPathIcon className="h-4 w-4" />
@@ -346,7 +455,10 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
           </div>
         </header>
 
-        {(seedStatus.loading || seedStatus.message || seedStatus.error || clearStatus.loading || clearStatus.message || clearStatus.error) && (
+        {(seedStatus.loading || seedStatus.message || seedStatus.error ||
+          clearStatus.loading || clearStatus.message || clearStatus.error ||
+          exportStatus.loading || exportStatus.error ||
+          importStatus.loading || importStatus.message || importStatus.error) && (
           <div className="border-b border-gray-900 bg-black/80 px-6 py-2 text-xs">
             {seedStatus.loading && <span className="text-gray-400">Initializing demo data...</span>}
             {!seedStatus.loading && seedStatus.message && (
@@ -361,6 +473,17 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
             )}
             {!clearStatus.loading && clearStatus.error && (
               <span className="text-red-400">{clearStatus.error}</span>
+            )}
+            {exportStatus.loading && <span className="text-gray-400">Exporting database...</span>}
+            {!exportStatus.loading && exportStatus.error && (
+              <span className="text-red-400">{exportStatus.error}</span>
+            )}
+            {importStatus.loading && <span className="text-gray-400">Importing database...</span>}
+            {!importStatus.loading && importStatus.message && (
+              <span className="text-emerald-400">{importStatus.message}</span>
+            )}
+            {!importStatus.loading && importStatus.error && (
+              <span className="text-red-400">{importStatus.error}</span>
             )}
           </div>
         )}
@@ -528,6 +651,16 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
             confirmStyle="danger"
             onConfirm={handleClearDatabase}
             onCancel={() => setShowClearConfirmDialog(false)}
+          />
+        )}
+        {showImportConfirmDialog && pendingImportFile && (
+          <ConfirmDialog
+            title="Import Database"
+            message={`ファイル "${pendingImportFile.name}" からデータベースをインポートします。既存のデータは上書きされます。続行しますか？`}
+            confirmLabel="Import"
+            confirmStyle="warning"
+            onConfirm={handleImportDatabase}
+            onCancel={handleCancelImport}
           />
         )}
       </div>

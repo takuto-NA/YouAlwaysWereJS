@@ -1538,6 +1538,332 @@ export async function clearDatabase(): Promise<void> {
   });
 }
 
+/**
+ * データベースをエクスポート
+ *
+ * @description
+ * IndexedDBに保存されているKuzuデータベースディレクトリを
+ * 圧縮してBlobとして取得し、ダウンロード可能にする。
+ *
+ * @returns データベースファイルのBlob
+ *
+ * @why
+ * - ユーザーがデータをバックアップできるようにする
+ * - 他のデバイスやブラウザにデータを移行できるようにする
+ */
+export async function exportDatabase(): Promise<Blob> {
+  return queueOperation(async () => {
+    const kuzu = await loadKuzuModule();
+
+    // ディレクトリを確保してIndexedDBからデータを読み込む
+    await ensureDirectory(kuzu, KUZU_DB_DIR);
+    await remountIdbfs(kuzu, KUZU_DB_DIR);
+    await syncFs(kuzu, true);
+
+    // データベースディレクトリ全体を読み取る
+    const dbFiles = await readDatabaseDirectory(kuzu);
+
+    await safeUnmount(kuzu, KUZU_DB_DIR);
+
+    logDebug(KUZU_LOG_CONTEXT, "Database exported", {
+      fileCount: dbFiles.length,
+      totalSize: dbFiles.reduce((sum: number, f: DatabaseFileEntry) => sum + f.data.length, 0),
+    });
+
+    // バイナリデータを直接Blobとして保存
+    // SQLiteフォーマットなので、バイナリで保存する必要がある
+    if (dbFiles.length !== 1) {
+      throw new Error("Expected exactly one database file");
+    }
+
+    const dbFile = dbFiles[0];
+
+    // バイナリデータのチェックサムを計算
+    let dataChecksum = 0;
+    for (let i = 0; i < dbFile.data.length; i++) {
+      dataChecksum = (dataChecksum + dbFile.data[i]) % 0x100000000;
+    }
+    console.log("Export data checksum (original):", dataChecksum);
+
+    // メタデータとバイナリデータを分離
+    const metadata = {
+      version: 1,
+      exportDate: new Date().toISOString(),
+      fileName: dbFile.path,
+      fileSize: dbFile.data.length,
+      checksum: dataChecksum, // チェックサムを追加
+    };
+
+    // メタデータをJSON文字列に変換
+    const metadataJson = JSON.stringify(metadata);
+    const metadataBytes = new TextEncoder().encode(metadataJson);
+
+    // メタデータサイズ（4バイト）+ メタデータ + バイナリデータ
+    const headerSize = new Uint32Array([metadataBytes.length]);
+    const headerBytes = new Uint8Array(headerSize.buffer);
+
+    // 結合: [4バイトのヘッダーサイズ] + [メタデータJSON] + [バイナリデータ]
+    const combined = new Uint8Array(4 + metadataBytes.length + dbFile.data.length);
+    combined.set(headerBytes, 0);
+    combined.set(metadataBytes, 4);
+    combined.set(dbFile.data, 4 + metadataBytes.length);
+
+    // 結合後のバイナリ部分のチェックサムを確認
+    let combinedChecksum = 0;
+    const dataOffset = 4 + metadataBytes.length;
+    for (let i = 0; i < dbFile.data.length; i++) {
+      combinedChecksum = (combinedChecksum + combined[dataOffset + i]) % 0x100000000;
+    }
+    console.log("Export data checksum (in combined):", combinedChecksum);
+    console.log("Checksums match after combining:", dataChecksum === combinedChecksum);
+
+    return new Blob([combined], { type: "application/octet-stream" });
+  });
+}
+
+/**
+ * データベースをインポート
+ *
+ * @description
+ * BlobからKuzuデータベースディレクトリを復元し、
+ * IndexedDBに保存する。既存のデータは上書きされる。
+ *
+ * @param file インポートするデータベースファイル
+ *
+ * @why
+ * - ユーザーがバックアップからデータを復元できるようにする
+ * - 他のデバイスやブラウザからデータを移行できるようにする
+ */
+export async function importDatabase(file: Blob): Promise<void> {
+  // CRITICAL: インポート前にKuzuDBインスタンスキャッシュをクリア
+  // ファイルを上書きしても、メモリ内のDatabaseインスタンスは古いファイルを
+  // 参照し続けるため、インポート前にキャッシュをクリアする必要がある
+  kuzuModulePromise = null;
+  catalogProceduresSupported = null;
+
+  await queueOperation(async () => {
+    const kuzu = await loadKuzuModule();
+
+    // バイナリデータを読み取る
+    const arrayBuffer = await file.arrayBuffer();
+    const dataView = new DataView(arrayBuffer);
+
+    // ヘッダーサイズを読み取る（最初の4バイト）
+    const metadataSize = dataView.getUint32(0, true); // little-endian
+
+    // メタデータを読み取る
+    const metadataBytes = new Uint8Array(arrayBuffer, 4, metadataSize);
+    const metadataJson = new TextDecoder().decode(metadataBytes);
+    const metadata = JSON.parse(metadataJson) as {
+      version: number;
+      exportDate: string;
+      fileName: string;
+      fileSize: number;
+      checksum?: number;
+    };
+
+    logDebug(KUZU_LOG_CONTEXT, "Importing database", {
+      version: metadata.version,
+      exportDate: metadata.exportDate,
+      fileName: metadata.fileName,
+      fileSize: metadata.fileSize,
+    });
+
+    // バイナリデータを読み取る
+    const dbData = new Uint8Array(arrayBuffer, 4 + metadataSize);
+
+    if (dbData.length !== metadata.fileSize) {
+      throw new Error(`File size mismatch: expected ${metadata.fileSize}, got ${dbData.length}`);
+    }
+
+    // Blob読み込み後のチェックサムを計算
+    let blobChecksum = 0;
+    for (let i = 0; i < dbData.length; i++) {
+      blobChecksum = (blobChecksum + dbData[i]) % 0x100000000;
+    }
+    console.log("Import checksum (from blob):", blobChecksum);
+
+    if (metadata.checksum !== undefined) {
+      console.log("Expected checksum (from metadata):", metadata.checksum);
+      console.log("Checksum match (blob vs metadata):", blobChecksum === metadata.checksum);
+
+      if (blobChecksum !== metadata.checksum) {
+        console.error("CRITICAL: Checksum mismatch detected!");
+        console.error("This indicates data corruption during export or file read.");
+      }
+    }
+
+    // ディレクトリを確保
+    await ensureDirectory(kuzu, KUZU_DB_DIR);
+    await remountIdbfs(kuzu, KUZU_DB_DIR);
+
+    // 既存のデータベースを削除
+    console.log("🗑️ Clearing existing database...");
+    await clearDatabaseDirectory(kuzu);
+    console.log("✅ Database cleared");
+
+    // データの最初の16バイトをチェック（マジックナンバー）
+    const header = Array.from(dbData.slice(0, 16));
+    console.log("Imported database header (first 16 bytes):", header);
+    console.log("Imported database header as string:", String.fromCharCode(...header.slice(0, 4)));
+
+    // 新しいデータベースファイルを直接書き込む
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fs = kuzu.FS as any;
+    const fullPath = `${KUZU_DB_DIR}/${metadata.fileName}`;
+
+    console.log("📝 Writing new database file...");
+    await fs.writeFile(fullPath, dbData);
+    console.log("✅ File written");
+
+    // 書き込んだデータのチェックサム
+    let checksumBefore = 0;
+    for (let i = 0; i < dbData.length; i++) {
+      checksumBefore = (checksumBefore + dbData[i]) % 0x100000000;
+    }
+    console.log("Import checksum (before sync):", checksumBefore);
+
+    logDebug(KUZU_LOG_CONTEXT, "Database file written directly", {
+      path: metadata.fileName,
+      size: dbData.length,
+      header: header.slice(0, 4),
+    });
+
+    // IndexedDBに変更を同期
+    await syncFs(kuzu, false);
+
+    // 同期後、ファイルを読み戻してチェックサムを検証
+    try {
+      const readBackBuffer = await fs.readFile(fullPath);
+      const readBackData = new Uint8Array(readBackBuffer);
+
+      let checksumAfter = 0;
+      for (let i = 0; i < readBackData.length; i++) {
+        checksumAfter = (checksumAfter + readBackData[i]) % 0x100000000;
+      }
+
+      console.log("Import checksum (after sync, read back):", checksumAfter);
+      console.log("Checksum match:", checksumBefore === checksumAfter);
+      console.log("Size match:", dbData.length === readBackData.length);
+
+      // 先頭100バイトを比較
+      const first100Match = dbData.slice(0, 100).every((byte, i) => byte === readBackData[i]);
+      console.log("First 100 bytes match:", first100Match);
+
+      // 末尾100バイトを比較
+      const last100Match = dbData.slice(-100).every((byte, i) => {
+        const offset = readBackData.length - 100;
+        return byte === readBackData[offset + i];
+      });
+      console.log("Last 100 bytes match:", last100Match);
+    } catch (e) {
+      console.error("Failed to read back imported file:", e);
+    }
+
+    await safeUnmount(kuzu, KUZU_DB_DIR);
+
+    // フラグをクリア（インポートされたデータは不明なため）
+    window.localStorage.removeItem(KUZU_DEMO_FLAG);
+
+    logDebug(KUZU_LOG_CONTEXT, "Database imported successfully", {
+      fileSize: dbData.length,
+    });
+
+    // IMPORTANT: KuzuDBのインスタンスキャッシュをクリアする必要がある
+    // ファイルは正しく書き込まれているが、既存のDBインスタンスが古いファイルを
+    // 参照し続けているため、ページリロードが必要
+    // UIレイヤーでリロードを処理する
+  });
+}
+
+/**
+ * データベースディレクトリ内のファイル情報
+ */
+interface DatabaseFileEntry {
+  path: string;
+  data: Uint8Array;
+}
+
+/**
+ * データベースディレクトリ全体を読み取る（内部ヘルパー）
+ *
+ * 注: Emscripten FSにはreaddirがないため、IndexedDBから直接読み取る
+ */
+async function readDatabaseDirectory(kuzu: KuzuModule): Promise<DatabaseFileEntry[]> {
+  // IndexedDBから直接データベースファイルを読み取る
+  // Kuzuはpersistent.dbという単一ファイルを使用
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fs = kuzu.FS as any;
+
+  const files: DatabaseFileEntry[] = [];
+
+  try {
+    // メインデータベースファイルを読み取る
+    const dbFilePath = KUZU_DB_PATH;
+
+    try {
+      // fs.readFileは非同期でArrayBufferを返す
+      const arrayBuffer = await fs.readFile(dbFilePath);
+      const uint8Array = new Uint8Array(arrayBuffer);
+
+      // データの最初の16バイトをチェック（マジックナンバー）
+      const header = Array.from(uint8Array.slice(0, 16));
+      console.log("Database header (first 16 bytes):", header);
+      console.log("Database header as string:", String.fromCharCode(...header.slice(0, 4)));
+
+      // チェックサムを計算（デバッグ用）
+      let checksum = 0;
+      for (let i = 0; i < uint8Array.length; i++) {
+        checksum = (checksum + uint8Array[i]) % 0x100000000;
+      }
+      console.log("Export checksum:", checksum);
+
+      logDebug(KUZU_LOG_CONTEXT, "Database file read successfully", {
+        path: "persistent.db",
+        size: uint8Array.length,
+        header: header.slice(0, 4),
+      });
+
+      if (uint8Array.length > 0) {
+        files.push({
+          path: "persistent.db",
+          data: uint8Array,
+        });
+      } else {
+        throw new Error(`Database file is empty. Length: ${uint8Array.length}`);
+      }
+    } catch (error) {
+      logWarning(KUZU_LOG_CONTEXT, "Failed to read database file", { error, path: dbFilePath });
+      throw error;
+    }
+
+  } catch (error) {
+    logWarning(KUZU_LOG_CONTEXT, "Failed to read database", { error });
+    throw new Error(`Failed to export database: ${getErrorMessage(error)}`);
+  }
+
+  if (files.length === 0) {
+    throw new Error("No database files found. Please ensure data has been saved to the database.");
+  }
+
+  logDebug(KUZU_LOG_CONTEXT, "Database files read successfully", {
+    fileCount: files.length,
+    totalSize: files.reduce((sum: number, f: DatabaseFileEntry) => sum + f.data.length, 0),
+  });
+
+  return files;
+}
+
+/**
+ * データベースディレクトリをクリアする（内部ヘルパー）
+ */
+async function clearDatabaseDirectory(kuzu: KuzuModule): Promise<void> {
+  // メインデータベースファイルを削除
+  await removeStaleDatabaseFile(kuzu);
+}
+
+
 export const kuzuPaths = {
   dir: KUZU_DB_DIR,
   db: KUZU_DB_PATH,
