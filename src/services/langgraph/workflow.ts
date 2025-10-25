@@ -35,7 +35,7 @@ type ChatGraphState = typeof ChatStateAnnotation.State;
 
 type ChatModel = ChatOpenAI | ChatGoogleGenerativeAI;
 
-const MAX_TOOL_ITERATIONS = 6;
+const MAX_TOOL_ITERATIONS = 20;
 
 interface ModelCallResult {
   responseText: string;
