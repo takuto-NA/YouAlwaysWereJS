@@ -838,12 +838,12 @@ export async function describeTable(table: TableInfo): Promise<TableSchema> {
   return runWithConnection(async ({ conn }) => {
     // 複数の構文を試す（Kuzuのバージョンによって異なる）
     const queries = [
-      // 最新のKuzu: CALL構文
-      `CALL TABLE_INFO('${table.name}')`,
+      // 最新のKuzu: CALL構文 with RETURN
+      `CALL TABLE_INFO('${table.name}') RETURN *`,
       // 代替構文
-      `CALL SHOW_COLUMNS('${table.name}')`,
-      // 古いバージョン: DESCRIBE構文（サポートされていない可能性あり）
-      `DESCRIBE TABLE ${quoteIdentifier(table.name)}`,
+      `CALL SHOW_COLUMNS('${table.name}') RETURN *`,
+      // SHOW_TABLES系の構文を試す
+      `CALL DB.SHOW_TABLES() WHERE name = '${table.name}' RETURN *`,
     ];
 
     for (const sql of queries) {
