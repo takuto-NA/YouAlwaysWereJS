@@ -9,7 +9,9 @@ export type DynamicVariable =
   | "currentTime"
   | "currentDate"
   | "userLanguage"
-  | "conversationLength";
+  | "conversationLength"
+  | "userName"
+  | "userProfile";
 
 /**
  * プロンプトプリセット

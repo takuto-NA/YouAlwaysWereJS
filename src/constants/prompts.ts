@@ -2,6 +2,7 @@
  * プロンプトプリセットと動的変数の定義
  */
 import { PromptPreset, DynamicVariableInfo, DynamicVariable } from "../types/prompt";
+import { UserInfo } from "../types/userInfo";
 
 /**
  * 動的変数の情報
@@ -40,6 +41,37 @@ export const DYNAMIC_VARIABLES: Record<string, DynamicVariableInfo> = {
     getValue: () => {
       // この値は実行時に動的に渡される
       return "{{conversationLength}}";
+    },
+  },
+  userName: {
+    key: "userName",
+    label: "ユーザー名",
+    description: "ユーザーの名前",
+    getValue: () => {
+      const userInfo = localStorage.getItem("user_info");
+      if (userInfo) {
+        const parsed: UserInfo = JSON.parse(userInfo);
+        return parsed.name || "未設定";
+      }
+      return "未設定";
+    },
+  },
+  userProfile: {
+    key: "userProfile",
+    label: "ユーザープロファイル",
+    description: "ユーザーの詳細情報",
+    getValue: () => {
+      const userInfo = localStorage.getItem("user_info");
+      if (userInfo) {
+        const parsed: UserInfo = JSON.parse(userInfo);
+        const profile: string[] = [];
+
+        if (parsed.name) profile.push(`名前: ${parsed.name}`);
+        if (parsed.customNotes) profile.push(`追加情報: ${parsed.customNotes}`);
+
+        return profile.length > 0 ? profile.join("\n") : "未設定";
+      }
+      return "未設定";
     },
   },
 };

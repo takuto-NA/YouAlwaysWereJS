@@ -19,13 +19,14 @@
  * @see MemoryManagerModal - 記憶データ管理
  */
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Cog6ToothIcon, SparklesIcon, RectangleStackIcon, CircleStackIcon } from "@heroicons/react/24/outline";
+import { Cog6ToothIcon, SparklesIcon, RectangleStackIcon, CircleStackIcon, UserIcon } from "@heroicons/react/24/outline";
 import ChatMessage from "./components/ChatMessage";
 import ChatInput from "./components/ChatInput";
 import SettingsModal from "./components/SettingsModal";
 import PromptEditorModal from "./components/PromptEditorModal";
 import DisplaySettingsModal from "./components/DisplaySettingsModal";
 import MemoryManagerModal from "./components/MemoryManagerModal";
+import UserInfoModal from "./components/UserInfoModal";
 import StartupSplash from "./components/StartupSplash";
 import { Message, ChatState } from "./types/chat";
 import { PromptSettings } from "./types/prompt";
@@ -53,6 +54,7 @@ function App() {
   const [isPromptEditorOpen, setIsPromptEditorOpen] = useState(false);
   const [isDisplaySettingsOpen, setIsDisplaySettingsOpen] = useState(false);
   const [isMemoryManagerOpen, setIsMemoryManagerOpen] = useState(false);
+  const [isUserInfoOpen, setIsUserInfoOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(loadSettings());
   const [promptSettings, setPromptSettings] = useState<PromptSettings>(loadPromptSettings());
   const [displaySettings, setDisplaySettings] = useState<DisplaySettings>(loadDisplaySettings());
@@ -361,10 +363,22 @@ function App() {
         onClose={() => setIsMemoryManagerOpen(false)}
       />
 
-      {/* ヘッダー - シンプルなSF風 */}
-      <div className="bg-black border-b border-gray-800 px-6 py-3 flex items-center justify-between flex-shrink-0 animate-fadeIn">
-        <div className="text-white text-lg font-light tracking-widest">AI INTERFACE</div>
+      <UserInfoModal
+        isOpen={isUserInfoOpen}
+        onClose={() => setIsUserInfoOpen(false)}
+      />
+
+      {/* ヘッダー */}
+      <div className="bg-black border-b border-gray-800 px-6 py-3 flex items-center justify-end flex-shrink-0 animate-fadeIn">
         <div className="flex items-center gap-4">
+          <button
+            onClick={() => setIsUserInfoOpen(true)}
+            className="text-gray-600 transition-all duration-300 hover:scale-110 hover:text-white"
+            aria-label="Open user info"
+            title="User Info"
+          >
+            <UserIcon className="h-6 w-6" />
+          </button>
           <button
             onClick={() => setIsMemoryManagerOpen(true)}
             className="text-gray-600 transition-all duration-300 hover:scale-110 hover:text-white"
