@@ -1506,6 +1506,38 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * データベースを完全にクリアする
+ *
+ * @description
+ * IndexedDBからKuzuデータベースファイルを削除し、
+ * データを完全に初期化する。この操作は復元できない。
+ *
+ * @why
+ * - ユーザーが全てのデータを削除したい場合に使用
+ * - デモデータ初期化前にクリーンな状態にするため
+ */
+export async function clearDatabase(): Promise<void> {
+  await queueOperation(async () => {
+    const kuzu = await loadKuzuModule();
+
+    // ディレクトリを確保
+    await ensureDirectory(kuzu, KUZU_DB_DIR);
+    await remountIdbfs(kuzu, KUZU_DB_DIR);
+
+    // データベースファイルを削除
+    await removeStaleDatabaseFile(kuzu);
+
+    // IndexedDBに変更を同期
+    await syncFs(kuzu, false);
+    await safeUnmount(kuzu, KUZU_DB_DIR);
+
+    // キャッシュもクリア
+    window.localStorage.removeItem(KUZU_DEMO_FLAG);
+    writeFallbackTables([]);
+  });
+}
+
 export const kuzuPaths = {
   dir: KUZU_DB_DIR,
   db: KUZU_DB_PATH,

@@ -6,6 +6,8 @@ import {
   PlayIcon,
   InboxStackIcon,
   SparklesIcon,
+  TrashIcon,
+  ExclamationTriangleIcon,
 } from "@heroicons/react/24/outline";
 import {
   describeTable,
@@ -17,6 +19,7 @@ import {
   TablePreview,
   QueryResult,
   seedDemoData,
+  clearDatabase,
   KUZU_DEMO_FLAG,
 } from "../services/kuzuClient";
 
@@ -52,12 +55,22 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
     message: null,
     error: null,
   });
+  const [clearStatus, setClearStatus] = useState<{ loading: boolean; message: string | null; error: string | null }>({
+    loading: false,
+    message: null,
+    error: null,
+  });
+  const [showSeedConfirmDialog, setShowSeedConfirmDialog] = useState(false);
+  const [showClearConfirmDialog, setShowClearConfirmDialog] = useState(false);
 
   const closeButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!isOpen) {
       setSeedStatus({ loading: false, message: null, error: null });
+      setClearStatus({ loading: false, message: null, error: null });
+      setShowSeedConfirmDialog(false);
+      setShowClearConfirmDialog(false);
       return;
     }
 
@@ -206,6 +219,7 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
 
   const handleSeedDemo = async () => {
     if (seedStatus.loading) return;
+    setShowSeedConfirmDialog(false);
     setSeedStatus({ loading: true, message: null, error: null });
     try {
       await seedDemoData({
@@ -228,6 +242,27 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
         loading: false,
         message: null,
         error: message,
+      });
+    }
+  };
+
+  const handleClearDatabase = async () => {
+    if (clearStatus.loading) return;
+    setShowClearConfirmDialog(false);
+    setClearStatus({ loading: true, message: null, error: null });
+    try {
+      await clearDatabase();
+      setClearStatus({
+        loading: false,
+        message: "Database cleared successfully.",
+        error: null,
+      });
+      setRefreshToken((value) => value + 1);
+    } catch (error) {
+      setClearStatus({
+        loading: false,
+        message: null,
+        error: extractMessage(error),
       });
     }
   };
@@ -272,17 +307,28 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
           <div className="flex flex-1 items-center justify-end gap-3 md:flex-none">
             <button
               type="button"
-              onClick={handleSeedDemo}
-              disabled={seedStatus.loading}
-              className="flex items-center gap-2 rounded border border-indigo-500 px-3 py-2 text-xs uppercase tracking-wider text-indigo-200 transition hover:border-indigo-400 hover:text-white disabled:cursor-not-allowed disabled:border-gray-700 disabled:text-gray-600"
+              onClick={() => setShowSeedConfirmDialog(true)}
+              disabled={seedStatus.loading || clearStatus.loading}
+              className="flex items-center gap-2 rounded border border-yellow-600 px-3 py-2 text-xs uppercase tracking-wider text-yellow-300 transition hover:border-yellow-500 hover:bg-yellow-900/20 hover:text-yellow-200 disabled:cursor-not-allowed disabled:border-gray-700 disabled:text-gray-600"
+              title="既存データを削除してデモデータを初期化します"
             >
               <SparklesIcon className="h-4 w-4" />
               Initialize Demo
             </button>
             <button
               type="button"
+              onClick={() => setShowClearConfirmDialog(true)}
+              disabled={seedStatus.loading || clearStatus.loading}
+              className="flex items-center gap-2 rounded border border-red-600 px-3 py-2 text-xs uppercase tracking-wider text-red-300 transition hover:border-red-500 hover:bg-red-900/20 hover:text-red-200 disabled:cursor-not-allowed disabled:border-gray-700 disabled:text-gray-600"
+              title="全てのデータベースデータを削除します"
+            >
+              <TrashIcon className="h-4 w-4" />
+              Clear All
+            </button>
+            <button
+              type="button"
               onClick={handleRefresh}
-              disabled={tablesState.loading || seedStatus.loading}
+              disabled={tablesState.loading || seedStatus.loading || clearStatus.loading}
               className="flex items-center gap-2 rounded border border-gray-700 px-3 py-2 text-xs uppercase tracking-wider text-gray-400 transition hover:border-gray-500 hover:text-white disabled:cursor-not-allowed disabled:border-gray-700 disabled:text-gray-600"
             >
               <ArrowPathIcon className="h-4 w-4" />
@@ -300,7 +346,7 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
           </div>
         </header>
 
-        {(seedStatus.loading || seedStatus.message || seedStatus.error) && (
+        {(seedStatus.loading || seedStatus.message || seedStatus.error || clearStatus.loading || clearStatus.message || clearStatus.error) && (
           <div className="border-b border-gray-900 bg-black/80 px-6 py-2 text-xs">
             {seedStatus.loading && <span className="text-gray-400">Initializing demo data...</span>}
             {!seedStatus.loading && seedStatus.message && (
@@ -308,6 +354,13 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
             )}
             {!seedStatus.loading && seedStatus.error && (
               <span className="text-red-400">{seedStatus.error}</span>
+            )}
+            {clearStatus.loading && <span className="text-gray-400">Clearing database...</span>}
+            {!clearStatus.loading && clearStatus.message && (
+              <span className="text-emerald-400">{clearStatus.message}</span>
+            )}
+            {!clearStatus.loading && clearStatus.error && (
+              <span className="text-red-400">{clearStatus.error}</span>
             )}
           </div>
         )}
@@ -455,6 +508,28 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
             </div>
           </main>
         </div>
+
+        {/* Confirmation Dialogs */}
+        {showSeedConfirmDialog && (
+          <ConfirmDialog
+            title="Initialize Demo Data"
+            message="既存のデータベースを削除してデモデータで初期化します。この操作は元に戻せません。続行しますか？"
+            confirmLabel="Initialize"
+            confirmStyle="warning"
+            onConfirm={handleSeedDemo}
+            onCancel={() => setShowSeedConfirmDialog(false)}
+          />
+        )}
+        {showClearConfirmDialog && (
+          <ConfirmDialog
+            title="Clear All Data"
+            message="全てのデータベースデータを完全に削除します。この操作は元に戻せません。本当に削除しますか？"
+            confirmLabel="Delete All"
+            confirmStyle="danger"
+            onConfirm={handleClearDatabase}
+            onCancel={() => setShowClearConfirmDialog(false)}
+          />
+        )}
       </div>
     </div>
   );
@@ -624,6 +699,49 @@ function extractMessage(error: unknown): string {
   } catch {
     return "Unknown error";
   }
+}
+
+interface ConfirmDialogProps {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  confirmStyle: "warning" | "danger";
+  onConfirm: () => void;
+  onCancel: () => void;
+}
+
+function ConfirmDialog({ title, message, confirmLabel, confirmStyle, onConfirm, onCancel }: ConfirmDialogProps) {
+  const confirmButtonClass = confirmStyle === "danger"
+    ? "bg-red-600 text-white hover:bg-red-700 focus:ring-red-500"
+    : "bg-yellow-600 text-white hover:bg-yellow-700 focus:ring-yellow-500";
+
+  return (
+    <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="mx-4 w-full max-w-md rounded-lg border border-gray-800 bg-gray-900 p-6 shadow-2xl">
+        <div className="mb-4 flex items-center gap-3">
+          <ExclamationTriangleIcon className={`h-6 w-6 ${confirmStyle === "danger" ? "text-red-500" : "text-yellow-500"}`} />
+          <h3 className="text-lg font-semibold text-white">{title}</h3>
+        </div>
+        <p className="mb-6 text-sm text-gray-300">{message}</p>
+        <div className="flex gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 rounded border border-gray-700 px-4 py-2 text-sm font-medium text-gray-300 transition hover:border-gray-500 hover:bg-gray-800 hover:text-white focus:outline-none focus:ring-2 focus:ring-gray-500"
+          >
+            キャンセル
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className={`flex-1 rounded px-4 py-2 text-sm font-medium transition focus:outline-none focus:ring-2 ${confirmButtonClass}`}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default MemoryManagerModal;
