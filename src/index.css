@@ -667,7 +667,7 @@ body {
   gap: 0.75rem;
   max-width: 64rem;
   margin: 0 auto;
-  align-items: center;
+  align-items: flex-end;
 }
 
 .chat-input-bar__field {
@@ -679,6 +679,10 @@ body {
   font-size: 1rem;
   line-height: 1.5;
   transition: border-color 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+  resize: none;
+  min-height: 2.8rem;
+  max-height: 200px;
+  overflow-y: auto;
 }
 
 .chat-input-bar__field::placeholder {
