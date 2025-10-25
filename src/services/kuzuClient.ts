@@ -1,25 +1,55 @@
 /**
- * Why this module matters:
- * - Shields KuzuDB WASM specifics from the rest of the app so LangGraph agents can call a stable API.
- * - Serialises filesystem work to avoid race conditions when multiple automated actions run.
+ * KuzuDB WebAssembly クライアント
+ *
+ * @description
+ * KuzuグラフデータベースのWASM版をブラウザ内で実行し、
+ * AIエージェントの長期記憶として機能させる。
+ * IndexedDB経由でデータを永続化し、ファイルシステム操作を直列化することで
+ * 並行アクセスによる競合状態を防ぐ。
+ *
+ * @why
+ * - KuzuDB WASMの複雑な初期化/クリーンアップをカプセル化し、安定したAPIを提供
+ * - 複数のAI Tool呼び出しが並行実行されてもファイルシステム競合を防ぐため直列化
+ * - メモリID自動採番により、AIエージェントが簡単に記憶を追加できるようにする
+ * - IndexedDBによるブラウザ永続化で、リロード後もデータを保持
+ *
+ * @see https://kuzudb.com/ - KuzuDB公式ドキュメント
  */
 import { logDebug, logWarning, getErrorMessage } from "../utils/errorHandler";
 
+/**
+ * KuzuDB関連のパス定数
+ * WASMファイルとデータベースディレクトリの配置を一箇所で管理
+ */
 const KUZU_DB_DIR = "/database";
 const KUZU_DB_PATH = `${KUZU_DB_DIR}/persistent.db`;
 const KUZU_WORKER_PATH = "/kuzu-wasm/kuzu_wasm_worker.js";
 const KUZU_MODULE_PATH = "/kuzu-wasm/index.js";
 const BASE_PATH = import.meta.env?.BASE_URL ?? "/";
 
+/**
+ * 動作設定定数
+ */
 const KUZU_LOG_CONTEXT = "KuzuClient";
+/** ファイルシステム操作リトライ時の待機時間（ミリ秒） */
 const FILESYSTEM_RETRY_DELAY_MS = 50;
+/** クエリ結果から文字列を抽出する際の最大再帰深度 */
 const MAX_STRING_EXTRACTION_DEPTH = 5;
+/** テーブルプレビュー時のデフォルト行数制限 */
 const DEFAULT_PREVIEW_LIMIT = 25;
+/** カラム名分割時の最小トークン数 */
 const MIN_COLUMN_TOKENS = 2;
+/** Memoryノードの最大ID取得クエリ */
 const MEMORY_MAX_ID_QUERY = "MATCH (m:Memory) RETURN COALESCE(MAX(m.id), 0) AS maxId";
+/** AIエージェントが自動ID採番を要求する際のプレースホルダー */
 const AUTO_MEMORY_ID_PLACEHOLDER = "__AUTO_MEMORY_ID__";
+/** Memory ID増分値 */
 const MEMORY_ID_INCREMENT = 1;
 
+/**
+ * KuzuDB WASMファイルシステムインターフェース
+ * Emscripten FSを通じてIndexedDBに永続化
+ */
 interface KuzuFileSystem {
   mkdir(path: string): Promise<void>;
   unlink(path: string): Promise<void>;
@@ -29,21 +59,33 @@ interface KuzuFileSystem {
   writeFile?(path: string, content: string): Promise<void>;
 }
 
+/**
+ * KuzuDBデータベースインスタンス
+ */
 interface KuzuDatabase {
   close(): Promise<void>;
 }
 
+/**
+ * Kuzuクエリ結果ハンドル
+ */
 interface KuzuQueryResultHandle {
   getColumnNames(): Promise<string[]>;
   getAllObjects(): Promise<QueryRow[]>;
   close(): Promise<void>;
 }
 
+/**
+ * Kuzuデータベース接続
+ */
 interface KuzuConnection {
   query(sql: string): Promise<KuzuQueryResultHandle>;
   close(): Promise<void>;
 }
 
+/**
+ * KuzuDB WASMモジュール
+ */
 interface KuzuModule {
   Database: new (path: string) => KuzuDatabase;
   Connection: new (db: KuzuDatabase) => KuzuConnection;
@@ -51,12 +93,20 @@ interface KuzuModule {
   setWorkerPath?(path: string): void;
 }
 
+/**
+ * Kuzu実行コンテキスト
+ * モジュール、DB、接続の3点セットを保持
+ */
 interface KuzuExecutionContext {
   kuzu: KuzuModule;
   db: KuzuDatabase;
   conn: KuzuConnection;
 }
 
+/**
+ * ファイルシステムエラーコード（文字列形式）
+ * EmscriptenのErrnoに対応
+ */
 const ERROR_CODES = {
   FILE_EXISTS: "EEXIST",
   INVALID_ARGUMENT: "EINVAL",
@@ -64,6 +114,10 @@ const ERROR_CODES = {
   RESOURCE_BUSY: "EBUSY",
 } as const;
 
+/**
+ * ファイルシステムエラー番号（数値形式）
+ * ブラウザ環境でのエラー判定に使用
+ */
 const ERROR_ERRNO = {
   FILE_EXISTS: 17,
   FILE_EXISTS_NEGATIVE: -17,
@@ -76,9 +130,15 @@ const ERROR_ERRNO = {
   NO_ENTITY_NEGATIVE: -2,
 } as const;
 
+/** localStorageでデモデータ初期化済みフラグを保存するキー */
 export const KUZU_DEMO_FLAG = "kuzuDemoInitialized";
+/** テーブル一覧のフォールバックデータを保存するキー */
 const KUZU_FALLBACK_TABLES_KEY = "kuzuFallbackTables";
 
+/**
+ * デモ用CSVシードデータ
+ * 初回起動時にグラフDBの動作を確認するためのサンプルデータ
+ */
 const CSV_SEED_DATA: Record<string, string> = {
   "user.csv": `Adam,30
 Karissa,40
@@ -97,6 +157,10 @@ Zhang,Kitchener
 Noura,Guelph`,
 };
 
+/**
+ * デモデータベース初期化クエリ
+ * User/Cityノードテーブル、Follows/LivesIn関係テーブルを作成し、CSVからデータをロード
+ */
 const FIRST_RUN_QUERIES = [
   "CREATE NODE TABLE User(name STRING, age INT64, PRIMARY KEY (name))",
   "CREATE NODE TABLE City(name STRING, population INT64, PRIMARY KEY (name))",
@@ -108,47 +172,96 @@ const FIRST_RUN_QUERIES = [
   "COPY LivesIn FROM 'lives-in.csv'",
 ];
 
+/** クエリ結果の1行を表す型 */
 export type QueryRow = Record<string, unknown>;
 
+/**
+ * クエリ実行結果
+ */
 export interface QueryResult {
+  /** カラム名配列 */
   columns: string[];
+  /** 結果行配列 */
   rows: QueryRow[];
 }
 
+/**
+ * テーブル情報
+ */
 export interface TableInfo {
+  /** テーブル名 */
   name: string;
+  /** テーブルタイプ（NODE/REL等） */
   type?: string;
+  /** 生のクエリ結果行 */
   raw: QueryRow;
+  /** カラム情報配列 */
   columns?: Array<{ name: string; type: string }>;
 }
 
+/**
+ * テーブルスキーマ情報
+ */
 export interface TableSchema {
+  /** テーブル基本情報 */
   table: TableInfo;
+  /** カラム定義結果 */
   columns: QueryResult;
 }
 
+/**
+ * テーブルプレビュー結果
+ */
 export interface TablePreview {
+  /** テーブル基本情報 */
   table: TableInfo;
+  /** プレビューデータ */
   result: QueryResult | null;
+  /** エラーメッセージ（エラー時のみ） */
   error?: string;
 }
 
+/**
+ * デモデータシード時のオプション
+ */
 export interface SeedDemoOptions {
+  /** キャンセル用AbortSignal */
   signal?: AbortSignal;
+  /** ログ出力コールバック */
   onLog?: (message: string) => void;
+  /** 既存のKuzuインスタンス（省略時は自動ロード） */
   kuzuInstance?: KuzuModule;
 }
 
+/**
+ * グローバル状態管理
+ * WASMモジュールのシングルトン化と操作の直列化を実現
+ */
 let kuzuModulePromise: Promise<KuzuModule> | null = null;
+/** カタログプロシージャのサポート状況キャッシュ */
 let catalogProceduresSupported: boolean | null = null;
+/** ファイルシステム操作の直列化キュー（並行アクセス防止） */
 let operationQueue: Promise<void> = Promise.resolve();
 
+/**
+ * ブラウザ環境であることを確認
+ *
+ * @throws {Error} Node.js等のサーバー環境で実行された場合
+ * @why WASM + IndexedDBはブラウザ専用のため、早期にエラーを出して誤用を防ぐ
+ */
 function ensureBrowserEnvironment() {
   if (typeof window === "undefined") {
     throw new Error("Kuzu WASM client requires a browser environment.");
   }
 }
 
+/**
+ * 相対パスから絶対URLを解決
+ *
+ * @param relativePath - 相対パス
+ * @returns 完全修飾URL
+ * @why Viteのベースパスやデプロイ先URLに応じて、正しいアセットURLを構築するため
+ */
 function resolveAssetUrl(relativePath: string): string {
   const normalized = relativePath.startsWith("/") ? relativePath.slice(1) : relativePath;
   const base = BASE_PATH.endsWith("/") ? BASE_PATH : `${BASE_PATH}/`;
@@ -158,8 +271,17 @@ function resolveAssetUrl(relativePath: string): string {
   return new URL(`${base}${normalized}`, window.location.origin).href;
 }
 
+/**
+ * KuzuDB WASMモジュールをロード
+ *
+ * @returns KuzuModuleインスタンス
+ * @throws {Error} ブラウザ環境でない場合
+ *
+ * @why シングルトンパターンで複数回のロードを防ぎ、メモリとロード時間を節約
+ */
 export async function loadKuzuModule(): Promise<KuzuModule> {
   ensureBrowserEnvironment();
+  // 既にロード済みの場合は同じPromiseを返してシングルトン化
   if (!kuzuModulePromise) {
     kuzuModulePromise = (async () => {
       const moduleUrl = resolveAssetUrl(KUZU_MODULE_PATH);
@@ -167,6 +289,7 @@ export async function loadKuzuModule(): Promise<KuzuModule> {
       const kuzuCandidate =
         (importedModule as { default?: KuzuModule }).default ?? (importedModule as KuzuModule);
       const kuzu = kuzuCandidate as KuzuModule;
+      // Workerパスを設定してマルチスレッド処理を有効化
       if (typeof kuzu.setWorkerPath === "function") {
         kuzu.setWorkerPath(resolveAssetUrl(KUZU_WORKER_PATH));
       }
@@ -176,11 +299,25 @@ export async function loadKuzuModule(): Promise<KuzuModule> {
   return kuzuModulePromise;
 }
 
+/**
+ * KuzuDB接続を確立してタスクを実行
+ *
+ * @template T タスクの戻り値の型
+ * @param task 実行するタスク関数
+ * @returns タスクの実行結果
+ *
+ * @why
+ * - ファイルシステム操作を直列化し、並行アクセスによる競合状態を防ぐ
+ * - IndexedDBの同期（syncfs）を自動化し、確実にデータを永続化
+ * - 接続/DBのクリーンアップをfinallyで保証し、リソースリークを防ぐ
+ */
 export async function runWithConnection<T>(task: (ctx: KuzuExecutionContext) => Promise<T>): Promise<T> {
+  // 前の操作が完了するまで待機することで直列化を実現
   const resultPromise = operationQueue.catch(() => undefined).then(async () => {
     const kuzu = await loadKuzuModule();
     await ensureDirectory(kuzu, KUZU_DB_DIR);
     await remountIdbfs(kuzu, KUZU_DB_DIR);
+    // IndexedDBからWASMファイルシステムにデータを読み込む
     await syncFs(kuzu, true);
 
     const db = new kuzu.Database(KUZU_DB_PATH);
@@ -189,6 +326,7 @@ export async function runWithConnection<T>(task: (ctx: KuzuExecutionContext) => 
     try {
       return await task({ kuzu, db, conn });
     } finally {
+      // エラーが発生してもリソースを確実に解放
       try {
         await conn.close();
       } catch (error) {
@@ -200,11 +338,13 @@ export async function runWithConnection<T>(task: (ctx: KuzuExecutionContext) => 
         logWarning(KUZU_LOG_CONTEXT, "Failed to close database", { error });
       }
 
+      // WASMファイルシステムからIndexedDBに変更を書き戻す
       await syncFs(kuzu, false);
       await safeUnmount(kuzu, KUZU_DB_DIR);
     }
   });
 
+  // 次の操作のために、このPromiseをキューに追加
   operationQueue = resultPromise
     .then(() => undefined)
     .catch(() => undefined);
@@ -212,17 +352,39 @@ export async function runWithConnection<T>(task: (ctx: KuzuExecutionContext) => 
   return resultPromise;
 }
 
+/**
+ * 正規化されたCypherステートメント
+ */
 export interface NormalizedCypherStatement {
+  /** 正規化後のステートメント */
   statement: string;
+  /** 書き換えが行われたかどうか */
   didRewrite: boolean;
+  /** 自動メモリID採番のプレースホルダー数 */
   autoMemoryIdPlaceholders?: number;
 }
 
+/**
+ * クエリ実行オプション
+ */
 interface ExecuteQueryOptions {
+  /** Cypher正規化をスキップするか */
   skipNormalization?: boolean;
+  /** 自動メモリID採番のプレースホルダー数 */
   autoMemoryIdPlaceholders?: number;
 }
 
+/**
+ * Cypherクエリを実行
+ *
+ * @param sql Cypherクエリ文字列
+ * @param options 実行オプション
+ * @returns クエリ実行結果
+ *
+ * @why
+ * - Cypher構文をKuzu互換形式に自動変換し、AIエージェントが標準Cypherで記述できるようにする
+ * - `__AUTO_MEMORY_ID__`プレースホルダーを自動採番に置換し、AIが簡単に記憶を追加できるようにする
+ */
 export async function executeQuery(
   sql: string,
   options: ExecuteQueryOptions = {}
@@ -485,25 +647,39 @@ async function queueOperation<T>(task: () => Promise<T>): Promise<T> {
   return resultPromise;
 }
 
+/**
+ * データベース内の全テーブルを一覧取得
+ *
+ * @returns テーブル情報配列
+ *
+ * @why
+ * - 複数の取得方法を試行し、Kuzuバージョン互換性を確保
+ * - localStorageにフォールバックキャッシュを保存し、一時的なエラーでもテーブル一覧を表示
+ * - AIエージェントがデータベーススキーマを理解し、適切なクエリを生成できるようにする
+ */
 export async function listTables(): Promise<TableInfo[]> {
   return runWithConnection(async ({ conn }) => {
+    // 最新のKuzuバージョン: SHOW_TABLES()プロシージャを使用
     const resultFromShow = await tryShowTables(conn);
     if (resultFromShow) {
       replaceFallbackTables(resultFromShow);
       return resultFromShow;
     }
 
+    // 古いバージョン: NODE/REL別のプロシージャを使用
     const resultFromNodeRel = await tryNodeRelTables(conn);
     if (resultFromNodeRel.length > 0) {
       replaceFallbackTables(resultFromNodeRel);
       return resultFromNodeRel;
     }
 
+    // プロシージャが使えない場合: localStorageキャッシュから復元
     const fallback = loadFallbackTables();
     if (fallback.length > 0) {
       return fallback;
     }
 
+    // 最終手段: ラベルスキャンで取得
     const labelTables = await listTablesViaLabelScan(conn);
     if (labelTables.length > 0) {
       replaceFallbackTables(labelTables);
@@ -641,6 +817,16 @@ async function listTablesViaLabelScan(conn: KuzuConnection): Promise<TableInfo[]
   return Array.from(map.values());
 }
 
+/**
+ * テーブルのスキーマ（カラム定義）を取得
+ *
+ * @param table テーブル情報
+ * @returns テーブルスキーマ（カラム名と型）
+ *
+ * @why
+ * - AIエージェントが各テーブルの構造を理解し、正しいクエリを生成できるようにする
+ * - エラー時はlocalStorageキャッシュから復元し、可用性を向上
+ */
 export async function describeTable(table: TableInfo): Promise<TableSchema> {
   return runWithConnection(async ({ conn }) => {
     try {
@@ -648,6 +834,7 @@ export async function describeTable(table: TableInfo): Promise<TableSchema> {
       const columns = await runQuery(conn, sql);
       return { table, columns };
     } catch (error) {
+      // フォールバックキャッシュからスキーマを復元
       const fallback = findFallbackTable(table.name);
       if (fallback?.columns && fallback.columns.length > 0) {
         return {
@@ -666,6 +853,15 @@ export async function describeTable(table: TableInfo): Promise<TableSchema> {
   });
 }
 
+/**
+ * テーブルの内容をプレビュー取得
+ *
+ * @param table テーブル情報
+ * @param limit 取得する最大行数
+ * @returns テーブルプレビュー結果
+ *
+ * @why AIエージェントがデータの実例を確認し、適切なクエリを組み立てられるようにする
+ */
 export async function previewTable(table: TableInfo, limit = DEFAULT_PREVIEW_LIMIT): Promise<TablePreview> {
   return runWithConnection(async ({ conn }) => {
     const label = quoteIdentifier(table.name);
