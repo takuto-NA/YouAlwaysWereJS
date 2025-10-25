@@ -872,7 +872,44 @@ export async function describeTable(table: TableInfo): Promise<TableSchema> {
       }
     }
 
-    // すべての構文が失敗した場合、フォールバックキャッシュから復元
+    // すべての構文が失敗した場合、実際のデータからスキーマを推測
+    try {
+      const label = quoteIdentifier(table.name);
+      const sampleQuery = table.type === "REL"
+        ? `MATCH ()-[r:${label}]->() RETURN r LIMIT 1`
+        : `MATCH (n:${label}) RETURN n LIMIT 1`;
+
+      const sample = await runQuery(conn, sampleQuery);
+
+      if (sample.rows && sample.rows.length > 0) {
+        const firstRow = sample.rows[0];
+        const entity = firstRow.r || firstRow.n;
+
+        if (entity && typeof entity === 'object') {
+          // オブジェクトのプロパティからスキーマを推測
+          const columns = {
+            columns: ["column", "type"],
+            rows: Object.entries(entity).map(([key, value]) => ({
+              column: key,
+              type: typeof value === 'number' ? 'INT64' :
+                    typeof value === 'boolean' ? 'BOOL' :
+                    typeof value === 'string' ? 'STRING' : 'UNKNOWN',
+            })),
+          };
+
+          logDebug(KUZU_LOG_CONTEXT, "Inferred schema from sample data", {
+            table: table.name,
+            columns: columns.rows,
+          });
+
+          return { table, columns };
+        }
+      }
+    } catch (error) {
+      logDebug(KUZU_LOG_CONTEXT, "Failed to infer schema from sample data", { error });
+    }
+
+    // フォールバックキャッシュから復元
     const fallback = findFallbackTable(table.name);
     if (fallback?.columns && fallback.columns.length > 0) {
       return {
