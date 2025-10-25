@@ -373,14 +373,14 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
               <div className="flex items-center justify-between">
                 <span className="text-gray-600 uppercase tracking-wider font-light">LangGraph Progress</span>
                 <span className="text-white font-medium">
-                  {message.progress.iteration}/{message.progress.maxIterations}
+                  {message.progress.iteration ?? 0}/{message.progress.maxIterations ?? 0}
                 </span>
               </div>
               <div className="w-full bg-gray-800 h-1">
                 <div
                   className="bg-gray-400 h-1 transition-all duration-300"
                   style={{
-                    width: `${(message.progress.iteration / message.progress.maxIterations) * 100}%`,
+                    width: `${((message.progress.iteration ?? 0) / (message.progress.maxIterations ?? 1)) * 100}%`,
                   }}
                 />
               </div>
