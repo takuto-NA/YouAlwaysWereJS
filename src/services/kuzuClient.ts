@@ -749,17 +749,37 @@ async function listTablesViaLabelScan(conn: KuzuConnection): Promise<TableInfo[]
   const nodeResult = await runLabelQuery(conn);
   let relResult: QueryResult | null = null;
   if (nodeResult.rows.length > 0) {
-    try {
-      relResult = await runQuery(
-        conn,
-        `MATCH ()-[r]->()
-         WITH DISTINCT type(r) AS relType
-         WHERE relType IS NOT NULL AND relType <> ''
-         RETURN relType AS tableName
-         ORDER BY tableName`
-      );
-    } catch (error) {
-      logWarning(KUZU_LOG_CONTEXT, "Failed to list rel types, falling back to nodes only", { error });
+    // リレーションシップタイプを取得（複数の構文を試す）
+    const relQueries = [
+      // 戦略1: label()関数を使う（ノードと同じ）
+      `MATCH ()-[r]->()
+       RETURN DISTINCT label(r) AS tableName
+       ORDER BY tableName`,
+      // 戦略2: type()関数を使う（古い構文）
+      `MATCH ()-[r]->()
+       WITH DISTINCT type(r) AS relType
+       WHERE relType IS NOT NULL AND relType <> ''
+       RETURN relType AS tableName
+       ORDER BY tableName`,
+    ];
+
+    for (const query of relQueries) {
+      try {
+        relResult = await runQuery(conn, query);
+        if (relResult.rows && relResult.rows.length > 0) {
+          logDebug(KUZU_LOG_CONTEXT, "Retrieved relationship types", {
+            count: relResult.rows.length,
+          });
+          break;
+        }
+      } catch (error) {
+        logDebug(KUZU_LOG_CONTEXT, "Failed to list rel types with query", { query, error });
+        continue;
+      }
+    }
+
+    if (!relResult || relResult.rows.length === 0) {
+      logWarning(KUZU_LOG_CONTEXT, "Failed to list rel types, falling back to nodes only");
     }
   }
 
@@ -829,27 +849,46 @@ async function listTablesViaLabelScan(conn: KuzuConnection): Promise<TableInfo[]
  */
 export async function describeTable(table: TableInfo): Promise<TableSchema> {
   return runWithConnection(async ({ conn }) => {
-    try {
-      const sql = `DESCRIBE TABLE ${quoteIdentifier(table.name)};`;
-      const columns = await runQuery(conn, sql);
-      return { table, columns };
-    } catch (error) {
-      // フォールバックキャッシュからスキーマを復元
-      const fallback = findFallbackTable(table.name);
-      if (fallback?.columns && fallback.columns.length > 0) {
-        return {
-          table,
-          columns: {
-            columns: ["column", "type"],
-            rows: fallback.columns.map((column) => ({
-              column: column.name,
-              type: column.type,
-            })),
-          },
-        };
+    // 複数の構文を試す（Kuzuのバージョンによって異なる）
+    const queries = [
+      // 最新のKuzu: CALL構文
+      `CALL TABLE_INFO('${table.name}')`,
+      // 代替構文
+      `CALL SHOW_COLUMNS('${table.name}')`,
+      // 古いバージョン: DESCRIBE構文（サポートされていない可能性あり）
+      `DESCRIBE TABLE ${quoteIdentifier(table.name)}`,
+    ];
+
+    for (const sql of queries) {
+      try {
+        const columns = await runQuery(conn, sql);
+        if (columns.rows && columns.rows.length > 0) {
+          return { table, columns };
+        }
+      } catch (error) {
+        // 次の構文を試す
+        logDebug(KUZU_LOG_CONTEXT, `Failed to describe table with: ${sql}`, { error });
+        continue;
       }
-      throw error;
     }
+
+    // すべての構文が失敗した場合、フォールバックキャッシュから復元
+    const fallback = findFallbackTable(table.name);
+    if (fallback?.columns && fallback.columns.length > 0) {
+      return {
+        table,
+        columns: {
+          columns: ["column", "type"],
+          rows: fallback.columns.map((column) => ({
+            column: column.name,
+            type: column.type,
+          })),
+        },
+      };
+    }
+
+    // フォールバックも失敗した場合、エラーをスロー
+    throw new Error(`Failed to describe table: ${table.name}. No supported syntax found.`);
   });
 }
 
@@ -1341,6 +1380,30 @@ function extractCount(rows: QueryRow[]): number {
 
 
 async function runLabelQuery(conn: KuzuConnection): Promise<QueryResult> {
+  // 複数の戦略を試す: labels()関数は一部のDBで型変換エラーを起こすため、
+  // より単純なクエリから試す
+
+  // 戦略1: label()関数で個別にラベルを取得（配列ではなく単一の文字列）
+  try {
+    const result = await runQuery(
+      conn,
+      `MATCH (n)
+       RETURN DISTINCT label(n) AS tableName
+       ORDER BY tableName`
+    );
+
+    if (result.rows && result.rows.length > 0) {
+      logDebug(KUZU_LOG_CONTEXT, "Retrieved node labels using label() function", {
+        count: result.rows.length,
+      });
+      return { columns: ["tableName"], rows: result.rows };
+    }
+  } catch (error) {
+    // label()が使えない場合は次の戦略へ
+    logDebug(KUZU_LOG_CONTEXT, "label() function not available", { error });
+  }
+
+  // 戦略2: labels()関数を使った従来の方法（配列処理）
   try {
     const result = await runQuery(
       conn,
@@ -1635,11 +1698,9 @@ export async function exportDatabase(): Promise<Blob> {
  * - 他のデバイスやブラウザからデータを移行できるようにする
  */
 export async function importDatabase(file: Blob): Promise<void> {
-  // CRITICAL: インポート前にKuzuDBインスタンスキャッシュをクリア
-  // ファイルを上書きしても、メモリ内のDatabaseインスタンスは古いファイルを
-  // 参照し続けるため、インポート前にキャッシュをクリアする必要がある
-  kuzuModulePromise = null;
-  catalogProceduresSupported = null;
+  // Note: キャッシュクリアはインポート処理の最後に行う
+  // インポート処理中は既存のkuzuインスタンスを使ってファイル操作を行い、
+  // 完了後にキャッシュをクリアして次回アクセス時に新DBを読み込む
 
   await queueOperation(async () => {
     const kuzu = await loadKuzuModule();
@@ -1768,12 +1829,14 @@ export async function importDatabase(file: Blob): Promise<void> {
     logDebug(KUZU_LOG_CONTEXT, "Database imported successfully", {
       fileSize: dbData.length,
     });
-
-    // IMPORTANT: KuzuDBのインスタンスキャッシュをクリアする必要がある
-    // ファイルは正しく書き込まれているが、既存のDBインスタンスが古いファイルを
-    // 参照し続けているため、ページリロードが必要
-    // UIレイヤーでリロードを処理する
   });
+
+  // CRITICAL: インポート完了後にKuzuDBインスタンスキャッシュをクリア
+  // ファイルは正しく書き込まれたが、メモリ内のDatabaseインスタンスは
+  // まだ古いファイルを参照している。次回アクセス時に新しいDBを読み込むため、
+  // ここでキャッシュをクリアする
+  kuzuModulePromise = null;
+  catalogProceduresSupported = null;
 }
 
 /**

@@ -331,8 +331,10 @@ function MemoryManagerModal({ isOpen, onClose }: MemoryManagerModalProps) {
       });
       setPendingImportFile(null);
 
-      // インポート関数内でKuzuDBインスタンスキャッシュがクリアされるため、
-      // テーブルリストを再取得すると新しいデータベースが読み込まれる
+      // インポート関数内でKuzuDBインスタンスキャッシュがクリアされる。
+      // 短い遅延を入れてから再読み込みすることで、キャッシュクリアが
+      // 確実に反映され、次回アクセス時に新しいDBが読み込まれる
+      await new Promise((resolve) => setTimeout(resolve, 100));
       setRefreshToken((value) => value + 1);
     } catch (error) {
       setImportStatus({
