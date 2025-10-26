@@ -19,6 +19,12 @@ export interface Message {
     /** 処理中の説明 */
     status?: string;
   };
+  /** LangGraphの処理進捗履歴（デバッグ用にスタック表示） */
+  progressHistory?: Array<{
+    iteration: number;
+    status: string;
+    currentTool?: string;
+  }>;
 }
 
 export interface ChatState {

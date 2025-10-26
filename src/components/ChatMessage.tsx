@@ -231,6 +231,7 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
   const isSystem = message.role === "system";
   const isAssistant = message.role === "assistant";
   const [isCopied, setIsCopied] = useState(false);
+  const [showProgressHistory, setShowProgressHistory] = useState(false);
 
   const blocks = useMemo(() => buildMessageBlocks(message.content), [message.content]);
 
@@ -344,7 +345,8 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
             <span className={`chat-message__label chat-message__label--${role}`}>{label}</span>
           </div>
           <div className="flex items-center gap-2">
-            {isTyping && (
+            {/* プログレスバーがある場合は「...」を表示しない */}
+            {isTyping && !message.progress && (
               <div className="chat-message__typing" aria-hidden="true">
                 <span className="chat-message__typing-dot" />
                 <span className="chat-message__typing-dot" />
@@ -367,9 +369,9 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
         </div>
 
         <div className={`chat-message__body chat-message__body--${role}`}>
-          {/* プログレス表示 */}
-          {message.progress && (!message.content || message.content.length === 0) && (
-            <div className="flex flex-col gap-2 p-3 bg-black border border-gray-700 text-xs font-mono">
+          {/* プログレス表示 - contentの有無に関わらず表示し、ログをスタック */}
+          {message.progress && (
+            <div className="flex flex-col gap-2 p-3 mb-3 bg-black border border-gray-700 text-xs font-mono">
               <div className="flex items-center justify-between">
                 <span className="text-gray-600 uppercase tracking-wider font-light">LangGraph Progress</span>
                 <span className="text-white font-medium">
@@ -384,17 +386,36 @@ function ChatMessage({ message, enableTypewriter = true, showTimestamp = false }
                   }}
                 />
               </div>
-              <div className="flex items-center gap-2">
-                <div className="flex gap-1">
-                  <span className="inline-block w-1 h-1 bg-gray-400 rounded-full animate-pulse" />
-                  <span className="inline-block w-1 h-1 bg-gray-400 rounded-full animate-pulse delay-75" />
-                  <span className="inline-block w-1 h-1 bg-gray-400 rounded-full animate-pulse delay-150" />
-                </div>
-                <span className="text-gray-400">{message.progress.status}</span>
-              </div>
+              <div className="text-gray-400">{message.progress.status}</div>
               {message.progress.currentTool && (
                 <div className="text-gray-600">
                   Tool: <span className="text-white font-medium">{message.progress.currentTool}</span>
+                </div>
+              )}
+
+              {/* 進捗履歴の表示（折りたたみ可能） */}
+              {message.progressHistory && message.progressHistory.length > 0 && (
+                <div className="mt-2 border-t border-gray-800 pt-2">
+                  <button
+                    onClick={() => setShowProgressHistory(!showProgressHistory)}
+                    className="text-gray-600 hover:text-gray-400 transition-colors flex items-center gap-1"
+                  >
+                    <span>{showProgressHistory ? "▼" : "▶"}</span>
+                    <span>History ({message.progressHistory.length} steps)</span>
+                  </button>
+                  {showProgressHistory && (
+                    <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
+                      {message.progressHistory.map((entry, index) => (
+                        <div key={index} className="text-gray-600 pl-4 border-l-2 border-gray-800">
+                          <span className="text-gray-500">#{entry.iteration}</span>{" "}
+                          {entry.status}
+                          {entry.currentTool && (
+                            <span className="text-white ml-2">({entry.currentTool})</span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

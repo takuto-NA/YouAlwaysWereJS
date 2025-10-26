@@ -252,6 +252,15 @@ function App() {
         setChatState((prev) => {
           const updatedMessages = prev.messages.map((msg) => {
             if (msg.id === currentPlaceholderId && msg.role === "assistant") {
+              // 進捗履歴に追加（デバッグ用）
+              const newHistoryEntry = {
+                iteration: progress.iteration ?? 0,
+                status: progress.status ?? "",
+                currentTool: progress.currentTool,
+              };
+
+              const existingHistory = msg.progressHistory ?? [];
+
               return {
                 ...msg,
                 progress: {
@@ -260,6 +269,7 @@ function App() {
                   currentTool: progress.currentTool,
                   status: progress.status,
                 },
+                progressHistory: [...existingHistory, newHistoryEntry],
               };
             }
             return msg;
@@ -278,7 +288,7 @@ function App() {
       );
 
       const memoryToolInstructions = hasTools
-        ? "\n\n[Memory Tools]\n- Use `kuzu_list_tables` to enumerate available graph tables.\n- Use `kuzu_describe_table` to inspect schemas and review sample rows before modifying data.\n- Use `kuzu_query` to read, insert, update, or delete data. Always include a reasonable LIMIT when reading and never assume results without querying.\n- Treat the database as the source of truth for long-term memory."
+        ? "\n\n[Memory Tools - CRITICAL]\nYou have access to a persistent graph database for long-term memory. You MUST use these tools EVERY TIME users ask about what you remember or to store information:\n\n- Use `kuzu_list_tables` to enumerate available graph tables\n- Use `kuzu_describe_table` to inspect schemas and review sample rows before modifying data\n- Use `kuzu_query` to read, insert, update, or delete data. Always include a reasonable LIMIT when reading\n\nWhen a user asks about memory (\"What do you remember?\", \"他にも?\", \"過去の会話を見て\", etc.), you MUST:\n1. Call `kuzu_list_tables` to see available tables\n2. Call `kuzu_describe_table` for relevant tables (e.g., UserProfile, ConversationLog)\n3. Call `kuzu_query` to retrieve the actual data\n\nCRITICAL RULES:\n- DO NOT rely on information from previous tool calls in this conversation - ALWAYS query fresh data\n- DO NOT say \"I will check the database\" without actually calling the tools\n- If you mention checking a table (e.g., \"会話ログテーブルを見てみます\"), you MUST call kuzu_describe_table and kuzu_query immediately\n- The database is the ONLY source of truth for long-term memory - your conversation context is NOT sufficient"
         : "";
 
       // AIに会話履歴とコンテキストを提供するため、システムプロンプトを先頭に配置
