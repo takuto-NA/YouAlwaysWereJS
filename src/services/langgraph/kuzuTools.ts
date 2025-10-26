@@ -87,7 +87,14 @@ export function createKuzuMemoryTools(): StructuredToolInterface[] {
     {
       name: "kuzu_query",
       description:
-        "Execute Cypher queries against the persistent Kuzu graph. Use for reads, writes, updates, or deletes. Always include a LIMIT for large reads.",
+        "Execute Cypher queries against the persistent Kuzu graph. Use for reads, writes, updates, or deletes. " +
+        "IMPORTANT: Before querying a table, ALWAYS use kuzu_describe_table first to see the actual schema and available properties. " +
+        "KuzuDB is NOT Neo4j - some Cypher features differ: " +
+        "1) Use DROP TABLE (not DROP REL/RELATION) " +
+        "2) No id() function - use explicit properties " +
+        "3) Limited MERGE support " +
+        "4) Use CURRENT_TIMESTAMP (not DATETIME()) " +
+        "Always include a LIMIT for large reads to avoid performance issues.",
       schema: z.object({
         statement: z
           .string()
@@ -182,7 +189,9 @@ export function createKuzuMemoryTools(): StructuredToolInterface[] {
     {
       name: "kuzu_describe_table",
       description:
-        "Inspect a table's schema and preview sample rows to understand stored memory structure.",
+        "Inspect a table's schema and preview sample rows to understand stored memory structure. " +
+        "CRITICAL: Always call this BEFORE writing kuzu_query statements for a table to see exact property names and types. " +
+        "This prevents 'Cannot find property' errors.",
       schema: z.object({
         tableName: z
           .string()
@@ -223,6 +232,21 @@ function interpretKuzuError(error: unknown, _statement: string): { message: stri
   } else if (baseMessage.includes("Cast failed")) {
     hint =
       "The graph may already be empty. Try refreshing with `kuzu_list_tables` or reseeding data if needed.";
+  } else if (baseMessage.includes("Cannot find property") || baseMessage.includes("property") && baseMessage.includes("does not exist")) {
+    hint =
+      "The property does not exist in this table. ALWAYS use kuzu_describe_table first to see the actual schema and available properties, then construct your query with the correct property names.";
+  } else if (baseMessage.includes("label") && baseMessage.includes("does not exist")) {
+    hint =
+      "The node or relationship label does not exist. Use kuzu_list_tables to see available tables (labels).";
+  } else if (baseMessage.includes("id() function")) {
+    hint =
+      "KuzuDB may not support Neo4j's id() function. Use explicit primary key properties instead (e.g. node.id).";
+  } else if (baseMessage.includes("MERGE") || baseMessage.includes("merge")) {
+    hint =
+      "KuzuDB has limited MERGE support. Consider using MATCH + CREATE or separate MATCH and CREATE statements.";
+  } else if (baseMessage.includes("CURRENT_TIMESTAMP") && baseMessage.includes("not in scope")) {
+    hint =
+      "In KuzuDB, CURRENT_TIMESTAMP cannot be used directly in CREATE/SET statements. Use a literal timestamp string instead (e.g. '2025-10-26T12:00:00') or use current_timestamp() function if available.";
   }
 
   return {
