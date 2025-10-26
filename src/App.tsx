@@ -268,16 +268,18 @@ function App() {
         });
       });
 
+      // OpenAIのみFunction Calling経由でKuzuツールにアクセス可能なため条件分岐
+      const hasTools = settings.aiProvider === "openai";
+
       const systemPromptText = buildSystemPrompt(
         promptSettings,
-        chatState.messages.length + 1
+        chatState.messages.length + 1,
+        hasTools
       );
 
-      // OpenAIのみFunction Calling経由でKuzuツールにアクセス可能なため条件分岐
-      const memoryToolInstructions =
-        settings.aiProvider === "openai"
-          ? "\n\n[Memory Tools]\n- Use `kuzu_list_tables` to enumerate available graph tables.\n- Use `kuzu_describe_table` to inspect schemas and review sample rows before modifying data.\n- Use `kuzu_query` to read, insert, update, or delete data. Always include a reasonable LIMIT when reading and never assume results without querying.\n- Treat the database as the source of truth for long-term memory."
-          : "";
+      const memoryToolInstructions = hasTools
+        ? "\n\n[Memory Tools]\n- Use `kuzu_list_tables` to enumerate available graph tables.\n- Use `kuzu_describe_table` to inspect schemas and review sample rows before modifying data.\n- Use `kuzu_query` to read, insert, update, or delete data. Always include a reasonable LIMIT when reading and never assume results without querying.\n- Treat the database as the source of truth for long-term memory."
+        : "";
 
       // AIに会話履歴とコンテキストを提供するため、システムプロンプトを先頭に配置
       const systemMessage: Message = {

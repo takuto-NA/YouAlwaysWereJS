@@ -365,6 +365,8 @@ export class LangGraphChatWorkflow {
     const conversation: BaseMessage[] = [...initialMessages];
     const appended: BaseMessage[] = [];
     let toolExecutedInLastIteration = false;
+    const recentToolCalls: string[] = []; // Track recent tool calls to detect excessive repetition
+    const toolResultsCache = new Map<string, string>(); // Cache tool results to prevent duplicate calls
 
     for (let iteration = 0; iteration < this.maxToolIterations; iteration += 1) {
       // プログレス通知: AI思考中
@@ -385,19 +387,31 @@ export class LangGraphChatWorkflow {
       if (toolCalls.length === 0) {
         const content = this.extractContentFromResponse(aiMessage, providerName);
 
-        // 前回のイテレーションでツールを実行した場合は、必ず再思考を要求
+        // 前回のイテレーションでツールを実行した場合、短すぎる回答なら再思考を要求
+        // (KimiK2用の対策だが、十分な長さの回答がある場合は再思考不要)
         if (toolExecutedInLastIteration) {
-          this.logWarning("Tool executed in previous iteration. Forcing re-thinking...", {
+          const MIN_RESPONSE_LENGTH = 100; // 100文字以上なら十分な回答とみなす
+
+          if ((content?.length ?? 0) < MIN_RESPONSE_LENGTH) {
+            this.logWarning("Tool executed in previous iteration with insufficient response. Forcing re-thinking...", {
+              iteration,
+              contentLength: content?.length ?? 0,
+              minRequired: MIN_RESPONSE_LENGTH,
+            });
+
+            // 早期終了したAIMessageを会話履歴から削除し、再度思考させる
+            // これにより言語の一貫性が保たれる
+            conversation.pop(); // aiMessageを削除
+            appended.pop();     // aiMessageを削除
+            toolExecutedInLastIteration = false;
+            continue;
+          }
+
+          // 十分な長さの回答がある場合は、そのまま終了を許可
+          this.logDebug("Tool executed in previous iteration, but response is sufficient. Allowing completion.", {
             iteration,
             contentLength: content?.length ?? 0,
           });
-
-          // 早期終了したAIMessageを会話履歴から削除し、再度思考させる
-          // これにより言語の一貫性が保たれる
-          conversation.pop(); // aiMessageを削除
-          appended.pop();     // aiMessageを削除
-          toolExecutedInLastIteration = false;
-          continue;
         }
 
         // ツール実行がなかった場合は通常通り終了
@@ -414,7 +428,7 @@ export class LangGraphChatWorkflow {
       }
 
       // ツールを実行
-      await this.executeToolCalls(toolCalls, conversation, appended, iteration);
+      await this.executeToolCalls(toolCalls, conversation, appended, iteration, recentToolCalls, toolResultsCache);
       toolExecutedInLastIteration = true;
     }
 
@@ -430,10 +444,59 @@ export class LangGraphChatWorkflow {
     toolCalls: any[],
     conversation: BaseMessage[],
     appended: BaseMessage[],
-    iteration: number
+    iteration: number,
+    recentToolCalls: string[],
+    toolResultsCache: Map<string, string>
   ): Promise<void> {
     for (const call of toolCalls) {
       const toolName = call.name ?? call.id ?? "unknown_tool";
+      const args = this.parseToolArgs(call.args ?? {}, toolName);
+
+      // Generate cache key for this tool call
+      const cacheKey = this.generateCacheKey(toolName, args);
+
+      // Check if we've already executed this exact tool call
+      if (toolResultsCache.has(cacheKey)) {
+        this.logWarning(`Skipping duplicate tool call: ${toolName}`, {
+          iteration,
+          toolName,
+          cacheKey,
+          args,
+        });
+
+        // Return cached result instead of re-executing
+        const cachedResult = toolResultsCache.get(cacheKey)!;
+        const toolMessage = new ToolMessage(
+          {
+            content: `[Cached result] ${cachedResult}`,
+            status: "success",
+            tool_call_id: call.id ?? toolName,
+          },
+          call.id ?? toolName,
+          toolName
+        );
+        appended.push(toolMessage);
+        conversation.push(toolMessage);
+        continue;
+      }
+
+      // Track tool call for repetition detection
+      recentToolCalls.push(toolName);
+
+      // Keep only last 5 tool calls
+      if (recentToolCalls.length > 5) {
+        recentToolCalls.shift();
+      }
+
+      // Warn if same tool called 3+ times in last 5 calls
+      const recentSameToolCount = recentToolCalls.filter(name => name === toolName).length;
+      if (recentSameToolCount >= 3) {
+        this.logWarning(`Tool "${toolName}" called ${recentSameToolCount} times recently. Consider if this is necessary.`, {
+          iteration,
+          toolName,
+          recentToolCalls: [...recentToolCalls],
+        });
+      }
 
       // プログレス通知: ツール実行中
       this.progressCallback?.({
@@ -456,8 +519,7 @@ export class LangGraphChatWorkflow {
         continue;
       }
 
-      const args = this.parseToolArgs(call.args ?? {}, toolName);
-      await this.executeSingleTool(tool, args, call, toolName, iteration, conversation, appended);
+      await this.executeSingleTool(tool, args, call, toolName, iteration, conversation, appended, toolResultsCache, cacheKey);
     }
   }
 
@@ -481,6 +543,21 @@ export class LangGraphChatWorkflow {
   }
 
   /**
+   * Generate a cache key for a tool call based on tool name and arguments.
+   * This allows us to detect and prevent duplicate tool calls with identical parameters.
+   */
+  private generateCacheKey(toolName: string, args: any): string {
+    try {
+      // Sort object keys to ensure consistent cache keys regardless of property order
+      const sortedArgs = JSON.stringify(args, Object.keys(args || {}).sort());
+      return `${toolName}:${sortedArgs}`;
+    } catch {
+      // If serialization fails, fall back to a simpler key
+      return `${toolName}:${String(args)}`;
+    }
+  }
+
+  /**
    * Execute a single tool and handle the result.
    */
   private async executeSingleTool(
@@ -490,12 +567,18 @@ export class LangGraphChatWorkflow {
     toolName: string,
     iteration: number,
     conversation: BaseMessage[],
-    appended: BaseMessage[]
+    appended: BaseMessage[],
+    toolResultsCache: Map<string, string>,
+    cacheKey: string
   ): Promise<void> {
     try {
       this.logDebug("Invoking tool", { tool: toolName, iteration, args });
       const result = await tool.invoke(args);
       const stringResult = this.serializeToolResult(result);
+
+      // Store result in cache
+      toolResultsCache.set(cacheKey, stringResult);
+
       const toolMessage = new ToolMessage(
         {
           content: stringResult,
@@ -539,10 +622,29 @@ export class LangGraphChatWorkflow {
     providerName: string
   ): Promise<AIMessage> {
     try {
-      const response =
-        this.tools.length > 0 && this.isOpenAI()
-          ? await this.model.bindTools(this.tools, { tool_choice: "auto" }).invoke(messages)
-          : await this.model.invoke(messages);
+      let response: BaseMessage;
+
+      if (this.tools.length > 0 && this.isOpenAI()) {
+        // For tool calling, use lower temperature for more deterministic behavior
+        // This reduces randomness and helps prevent duplicate tool calls
+        const originalTemp = (this.model as ChatOpenAI).temperature;
+
+        try {
+          // Temporarily set temperature to 0.2 for tool calling
+          (this.model as ChatOpenAI).temperature = 0.2;
+          // Disable parallel tool calls to reduce API requests
+          response = await this.model.bindTools(this.tools, {
+            tool_choice: "auto",
+            parallel_tool_calls: false
+          }).invoke(messages);
+        } finally {
+          // Restore original temperature
+          (this.model as ChatOpenAI).temperature = originalTemp;
+        }
+      } else {
+        response = await this.model.invoke(messages);
+      }
+
       if (response instanceof AIMessage) {
         return response;
       }

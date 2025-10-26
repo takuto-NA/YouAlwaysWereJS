@@ -18,13 +18,15 @@ import { PROMPT_PRESETS, DYNAMIC_VARIABLES } from "../constants/prompts";
  *
  * @param promptSettings - ユーザーのプロンプト設定
  * @param conversationLength - 現在の会話履歴の長さ（動的変数として使用）
+ * @param hasTools - ツールが利用可能かどうか（ツール呼び出しガイドラインを追加するか決定）
  * @returns 構築されたシステムプロンプト文字列
  *
  * @why 動的変数を含む柔軟なプロンプト生成と、エラー時の安全なフォールバックを両立
  */
 export function buildSystemPrompt(
   promptSettings: PromptSettings,
-  conversationLength?: number
+  conversationLength?: number,
+  hasTools?: boolean
 ): string {
   try {
     // 早期リターンで不正な入力を防ぎ、以降の処理を安全にするため
@@ -55,6 +57,24 @@ export function buildSystemPrompt(
       basePrompt = preset.systemPrompt;
     }
 
+    // ツール呼び出しのガイドラインを追加（重複呼び出しを防ぐため）
+    let finalPrompt = basePrompt;
+
+    if (hasTools) {
+      const toolGuidelines = `
+
+--- Tool Calling Guidelines ---
+IMPORTANT: Follow these rules when using tools:
+1. Each tool should be called only ONCE per unique input/parameter combination
+2. If you've already received results from a tool call (e.g., kuzu_describe_table for a specific table), DO NOT call it again - use the previous results
+3. Before calling a tool, check if you've already called it with the same parameters in this conversation
+4. If all necessary information has been gathered, provide the final answer instead of repeating tool calls
+5. MINIMIZE the number of tool calls - only call tools that are absolutely necessary to answer the user's question
+6. For database queries, focus on the MOST RELEVANT tables first - do NOT describe all available tables unless specifically asked`;
+
+      finalPrompt = `${basePrompt}${toolGuidelines}`;
+    }
+
     // 現在時刻や会話履歴数などの動的情報をAIに提供するため
     if (promptSettings.enabledDynamicVariables && promptSettings.enabledDynamicVariables.length > 0) {
       try {
@@ -78,7 +98,7 @@ export function buildSystemPrompt(
           .join("\n");
 
         if (dynamicContext) {
-          return `${basePrompt}\n\n--- Current Context ---\n${dynamicContext}`;
+          return `${finalPrompt}\n\n--- Current Context ---\n${dynamicContext}`;
         }
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -87,7 +107,7 @@ export function buildSystemPrompt(
       }
     }
 
-    return basePrompt;
+    return finalPrompt;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
     console.error("プロンプトの構築中にエラーが発生しました:", errorMessage);
