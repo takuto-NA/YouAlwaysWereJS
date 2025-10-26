@@ -364,6 +364,7 @@ export class LangGraphChatWorkflow {
   ): Promise<ModelCallResult> {
     const conversation: BaseMessage[] = [...initialMessages];
     const appended: BaseMessage[] = [];
+    let toolExecutedInLastIteration = false;
 
     for (let iteration = 0; iteration < this.maxToolIterations; iteration += 1) {
       // プログレス通知: AI思考中
@@ -380,8 +381,26 @@ export class LangGraphChatWorkflow {
 
       const toolCalls = Array.isArray(aiMessage.tool_calls) ? aiMessage.tool_calls : [];
 
+      // ツール実行後に即座に終了しようとした場合の検出
       if (toolCalls.length === 0) {
         const content = this.extractContentFromResponse(aiMessage, providerName);
+
+        // 前回のイテレーションでツールを実行した場合は、必ず再思考を要求
+        if (toolExecutedInLastIteration) {
+          this.logWarning("Tool executed in previous iteration. Forcing re-thinking...", {
+            iteration,
+            contentLength: content?.length ?? 0,
+          });
+
+          // 早期終了したAIMessageを会話履歴から削除し、再度思考させる
+          // これにより言語の一貫性が保たれる
+          conversation.pop(); // aiMessageを削除
+          appended.pop();     // aiMessageを削除
+          toolExecutedInLastIteration = false;
+          continue;
+        }
+
+        // ツール実行がなかった場合は通常通り終了
         // プログレス通知: 完了
         this.progressCallback?.({
           iteration: iteration + 1,
@@ -394,7 +413,9 @@ export class LangGraphChatWorkflow {
         };
       }
 
+      // ツールを実行
       await this.executeToolCalls(toolCalls, conversation, appended, iteration);
+      toolExecutedInLastIteration = true;
     }
 
     throw new Error(
