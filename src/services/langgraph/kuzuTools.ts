@@ -88,7 +88,11 @@ export function createKuzuMemoryTools(): StructuredToolInterface[] {
       name: "kuzu_query",
       description:
         "Execute Cypher queries against the persistent Kuzu graph. Use for reads, writes, updates, or deletes. " +
-        "IMPORTANT: Before querying a table, ALWAYS use kuzu_describe_table first to see the actual schema and available properties. " +
+        "CRITICAL: BEFORE querying ANY table:\n" +
+        "1) Use kuzu_list_tables to check if the table exists\n" +
+        "2) If it doesn't exist, CREATE it first with CREATE NODE TABLE\n" +
+        "3) Then use kuzu_describe_table to see the actual schema and available properties\n" +
+        "NEVER assume a table exists - the database starts empty!\n" +
         "KuzuDB is NOT Neo4j - some Cypher features differ: " +
         "1) Use DROP TABLE (not DROP REL/RELATION) " +
         "2) No id() function - use explicit properties " +
@@ -214,7 +218,14 @@ function interpretKuzuError(error: unknown, _statement: string): { message: stri
   const baseMessage = error instanceof Error ? error.message : String(error);
   let hint: string | undefined;
 
-  if (baseMessage.includes("mismatched input 'REL'") || baseMessage.includes("mismatched input 'RELATION'")) {
+  if (baseMessage.includes("Table") && baseMessage.includes("does not exist")) {
+    hint =
+      "CRITICAL: The table does not exist in the database. You MUST:\n" +
+      "1. Use kuzu_list_tables to see all existing tables\n" +
+      "2. If the table is missing, CREATE it first with CREATE NODE TABLE\n" +
+      "3. Example: CREATE NODE TABLE User(userId STRING, name STRING, memoryInfo STRING, lastUpdated TIMESTAMP, PRIMARY KEY (userId))\n" +
+      "DO NOT retry the query without creating the table first!";
+  } else if (baseMessage.includes("mismatched input 'REL'") || baseMessage.includes("mismatched input 'RELATION'")) {
     hint =
       "Kuzu expects `DROP TABLE <name>` for both node and relationship tables. Try rerunning with `DROP TABLE Follows;` etc.";
   } else if (baseMessage.includes("function DATETIME does not exist")) {

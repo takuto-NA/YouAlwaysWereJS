@@ -70,7 +70,20 @@ IMPORTANT: Follow these rules when using tools:
 3. Before calling a tool, check if you've already called it with the same parameters in this conversation
 4. If all necessary information has been gathered, provide the final answer instead of repeating tool calls
 5. MINIMIZE the number of tool calls - only call tools that are absolutely necessary to answer the user's question
-6. For database queries, focus on the MOST RELEVANT tables first - do NOT describe all available tables unless specifically asked`;
+6. For database queries, focus on the MOST RELEVANT tables first - do NOT describe all available tables unless specifically asked
+
+--- Kuzu Graph Database Critical Rules ---
+CRITICAL: When working with Kuzu graph database:
+1. ALWAYS check if tables exist BEFORE querying them:
+   - Use kuzu_list_tables to see all available tables
+   - If the table doesn't exist, you must CREATE it first
+2. NEVER assume a table exists - always verify first
+3. When a query fails with "Table X does not exist":
+   - First, check if the table exists with kuzu_list_tables
+   - If not, create the table with appropriate schema using CREATE NODE TABLE
+   - Example: CREATE NODE TABLE User(userId STRING, name STRING, memoryInfo STRING, lastUpdated TIMESTAMP, PRIMARY KEY (userId))
+4. ALWAYS use kuzu_describe_table to check the schema before querying
+5. Database starts empty - you must create tables as needed`;
 
       finalPrompt = `${basePrompt}${toolGuidelines}`;
     }
