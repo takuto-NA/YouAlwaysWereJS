@@ -9,6 +9,7 @@ import { mcpClient } from "../mcp/client";
 import { logDebug, logError } from "../../utils/errorHandler";
 import { createChatWorkflow, LangGraphChatWorkflow, ProgressCallback } from "../langgraph/workflow";
 import { createKuzuMemoryTools } from "../langgraph/kuzuTools";
+import type { MultiModelConfig } from "../../utils/storage";
 
 const DEFAULT_MODEL = "gpt-4o";
 
@@ -36,6 +37,7 @@ export class OpenAIService {
   private customEndpoint?: string;
   private maxToolIterations?: number;
   private progressCallback?: ProgressCallback;
+  private multiModelConfig?: MultiModelConfig;
   private workflow: LangGraphChatWorkflow | null = null;
   private memoryTools: StructuredToolInterface[] | null = null;
 
@@ -101,6 +103,14 @@ export class OpenAIService {
     this.workflow = null; // パラメータ変更時にワークフローをリセット
   }
 
+  /**
+   * マルチモデル設定を設定
+   */
+  setMultiModelConfig(config?: MultiModelConfig): void {
+    this.multiModelConfig = config;
+    this.workflow = null; // 設定変更時にワークフローをリセット
+  }
+
   private resolveTools(provider: "openai" | "gemini"): StructuredToolInterface[] | undefined {
     if (provider !== "openai") {
       return undefined;
@@ -127,7 +137,8 @@ export class OpenAIService {
         this.customEndpoint,
         this.resolveTools(provider),
         this.maxToolIterations,
-        this.progressCallback
+        this.progressCallback,
+        this.multiModelConfig
       );
     }
   }

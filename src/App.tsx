@@ -242,6 +242,11 @@ function App() {
         customService.setMaxToolIterations(settings.maxToolIterations);
       }
 
+      // マルチモデル設定を適用
+      if (settings.multiModel) {
+        customService.setMultiModelConfig(settings.multiModel);
+      }
+
       // プレースホルダーID用の変数（コールバックで使用）
       let currentPlaceholderId = "";
 

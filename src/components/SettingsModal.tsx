@@ -853,6 +853,138 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                   Higher values allow more complex reasoning chains but may increase latency and cost.
                 </p>
               </div>
+
+              {/* Multi-Model Configuration */}
+              {settings.aiProvider === "openai" && (
+                <div className="border-t border-gray-800 pt-4 mt-4">
+                  <div className="bg-gray-900 border border-gray-800 rounded-md px-4 py-4 space-y-4">
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex-1">
+                        <h3 className="text-white text-sm font-light uppercase tracking-wider flex items-center gap-2">
+                          🧠 Multi-Model Agent Configuration
+                          <span className="text-xs text-yellow-500 normal-case">(Advanced)</span>
+                        </h3>
+                        <p className="text-xs text-gray-500 mt-1">
+                          Use different models for different tasks to optimize cost and performance
+                        </p>
+                      </div>
+                      <label
+                        htmlFor="multi-model-enabled"
+                        className="flex items-center gap-2 text-xs uppercase tracking-wider text-gray-400 cursor-pointer select-none"
+                      >
+                        <span>{settings.multiModel?.enabled ? "Enabled" : "Disabled"}</span>
+                        <input
+                          id="multi-model-enabled"
+                          type="checkbox"
+                          checked={settings.multiModel?.enabled || false}
+                          onChange={(e) =>
+                            setSettings({
+                              ...settings,
+                              multiModel: {
+                                enabled: e.target.checked,
+                                thinkingModel: settings.multiModel?.thinkingModel,
+                                toolExecutionModel: settings.multiModel?.toolExecutionModel,
+                              },
+                            })
+                          }
+                          className="w-5 h-5 accent-gray-400 focus:outline-none focus:ring-2 focus:ring-white focus:ring-offset-2 focus:ring-offset-black"
+                        />
+                      </label>
+                    </div>
+
+                    {settings.multiModel?.enabled && (
+                      <div className="space-y-4 pt-3 border-t border-gray-800">
+                        {/* Thinking Model */}
+                        <div className="space-y-2">
+                          <label
+                            htmlFor="thinking-model-select"
+                            className="text-white text-sm font-light uppercase tracking-wider flex items-center gap-2"
+                          >
+                            💭 Thinking & Response Model
+                          </label>
+                          <select
+                            id="thinking-model-select"
+                            value={settings.multiModel?.thinkingModel || settings.openaiModel}
+                            onChange={(e) =>
+                              setSettings({
+                                ...settings,
+                                multiModel: {
+                                  ...settings.multiModel,
+                                  enabled: true,
+                                  thinkingModel: e.target.value,
+                                },
+                              })
+                            }
+                            className="w-full bg-black border border-gray-700 text-white px-4 py-2 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
+                          >
+                            <optgroup label="Groq (Fast & Cheap)">
+                              <option value="groq/compound-mini">Groq Compound Mini (Fastest)</option>
+                              <option value="groq/compound">Groq Compound (Balanced)</option>
+                            </optgroup>
+                            <optgroup label="Moonshot">
+                              <option value="moonshotai/kimi-k2-instruct-0905">Kimi K2 (Multilingual)</option>
+                            </optgroup>
+                            <optgroup label="OpenAI OSS">
+                              <option value="openai/gpt-oss-20b">GPT-OSS 20B</option>
+                              <option value="openai/gpt-oss-120b">GPT-OSS 120B</option>
+                            </optgroup>
+                          </select>
+                          <p className="text-xs text-gray-500">
+                            Used for: Initial reasoning, response generation (use fast/cheap models)
+                          </p>
+                        </div>
+
+                        {/* Tool Execution Model */}
+                        <div className="space-y-2">
+                          <label
+                            htmlFor="tool-execution-model-select"
+                            className="text-white text-sm font-light uppercase tracking-wider flex items-center gap-2"
+                          >
+                            🔧 Tool Execution Model
+                          </label>
+                          <select
+                            id="tool-execution-model-select"
+                            value={settings.multiModel?.toolExecutionModel || settings.openaiModel}
+                            onChange={(e) =>
+                              setSettings({
+                                ...settings,
+                                multiModel: {
+                                  ...settings.multiModel,
+                                  enabled: true,
+                                  toolExecutionModel: e.target.value,
+                                },
+                              })
+                            }
+                            className="w-full bg-black border border-gray-700 text-white px-4 py-2 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
+                          >
+                            <optgroup label="OpenAI OSS (Powerful)">
+                              <option value="openai/gpt-oss-120b">GPT-OSS 120B (Recommended)</option>
+                              <option value="openai/gpt-oss-20b">GPT-OSS 20B</option>
+                            </optgroup>
+                            <optgroup label="Groq">
+                              <option value="groq/compound">Groq Compound</option>
+                              <option value="groq/compound-mini">Groq Compound Mini</option>
+                            </optgroup>
+                            <optgroup label="Meta Llama">
+                              <option value="meta-llama/llama-4-scout-17b-16e-instruct">Llama 4 Scout</option>
+                            </optgroup>
+                          </select>
+                          <p className="text-xs text-gray-500">
+                            Used for: Tool calling decisions and parameter generation (use powerful models)
+                          </p>
+                        </div>
+
+                        {/* Example Configuration Info */}
+                        <div className="bg-black/40 border border-gray-800 px-3 py-2 text-xs text-gray-400 space-y-1">
+                          <p className="font-semibold text-gray-300">💡 Recommended Configuration:</p>
+                          <p>• Thinking: <code className="text-green-400">moonshotai/kimi-k2-instruct-0905</code> (Fast, cheap responses)</p>
+                          <p>• Tool Execution: <code className="text-blue-400">openai/gpt-oss-120b</code> (Accurate tool calls)</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </details>
 

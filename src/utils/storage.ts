@@ -67,6 +67,21 @@ const DEFAULT_MAX_TOOL_ITERATIONS = 20;
 export type AIProvider = "openai" | "gemini";
 
 /**
+ * マルチモデル設定
+ *
+ * LangGraphワークフローの異なるノード（役割）ごとに
+ * 別々のモデルを使用できるようにする設定
+ */
+export interface MultiModelConfig {
+  /** マルチモデル機能を使用するか（デフォルト: false） */
+  enabled: boolean;
+  /** 思考・応答生成用モデル（高速・低コストモデル推奨） */
+  thinkingModel?: string;
+  /** ツール実行・判断用モデル（高性能モデル推奨） */
+  toolExecutionModel?: string;
+}
+
+/**
  * アプリケーション全体の設定インターフェース
  */
 export interface AppSettings {
@@ -96,6 +111,8 @@ export interface AppSettings {
   maxTokens?: number;
   /** LangGraphツール実行の最大イテレーション回数 */
   maxToolIterations?: number;
+  /** マルチモデル設定（Advanced: 役割ごとに異なるモデルを使用） */
+  multiModel?: MultiModelConfig;
 }
 
 /**
@@ -115,6 +132,11 @@ const DEFAULT_SETTINGS: AppSettings = {
   temperature: DEFAULT_TEMPERATURE,
   maxTokens: DEFAULT_MAX_TOKENS,
   maxToolIterations: DEFAULT_MAX_TOOL_ITERATIONS,
+  multiModel: {
+    enabled: false,
+    thinkingModel: undefined,
+    toolExecutionModel: undefined,
+  },
 };
 
 /**

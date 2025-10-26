@@ -15,7 +15,7 @@ import type { StructuredToolInterface } from "@langchain/core/tools";
 
 import { Message } from "../../types/chat";
 import { logDebug, logError, logWarning } from "../../utils/errorHandler";
-import type { AIProvider } from "../../utils/storage";
+import type { AIProvider, MultiModelConfig } from "../../utils/storage";
 
 const ChatStateAnnotation = Annotation.Root({
   messages: Annotation<BaseMessage[], BaseMessage | BaseMessage[]>({
@@ -55,10 +55,13 @@ export type ProgressCallback = (progress: ProgressUpdate) => void;
 export class LangGraphChatWorkflow {
   private readonly provider: AIProvider;
   private readonly model: ChatModel;
+  private readonly thinkingModel: ChatModel;
+  private readonly toolExecutionModel: ChatModel;
   private readonly compiledGraph: ReturnType<LangGraphChatWorkflow["createGraph"]>;
   private readonly tools: StructuredToolInterface[];
   private readonly toolMap: Map<string, StructuredToolInterface>;
   private readonly maxToolIterations: number;
+  private readonly multiModelConfig?: MultiModelConfig;
   private progressCallback?: ProgressCallback;
 
   constructor(
@@ -70,13 +73,17 @@ export class LangGraphChatWorkflow {
     customEndpoint?: string,
     tools?: StructuredToolInterface[],
     maxToolIterations?: number,
-    progressCallback?: ProgressCallback
+    progressCallback?: ProgressCallback,
+    multiModelConfig?: MultiModelConfig
   ) {
     this.provider = provider;
     this.tools = tools?.length ? tools : [];
     this.toolMap = new Map(this.tools.map((tool) => [tool.name, tool]));
     this.maxToolIterations = maxToolIterations ?? MAX_TOOL_ITERATIONS;
     this.progressCallback = progressCallback;
+    this.multiModelConfig = multiModelConfig;
+
+    // メインモデルを作成
     this.model = this.createModel(
       provider,
       apiKey,
@@ -86,6 +93,45 @@ export class LangGraphChatWorkflow {
       customEndpoint,
       this.tools
     );
+
+    // マルチモデル設定が有効な場合、専用モデルを作成
+    if (multiModelConfig?.enabled) {
+      this.logDebug("マルチモデル設定が有効です", {
+        thinkingModel: multiModelConfig.thinkingModel || modelName,
+        toolExecutionModel: multiModelConfig.toolExecutionModel || modelName,
+      });
+
+      // 思考・応答用モデル
+      this.thinkingModel = multiModelConfig.thinkingModel
+        ? this.createModel(
+            provider,
+            apiKey,
+            multiModelConfig.thinkingModel,
+            temperature,
+            maxTokens,
+            customEndpoint,
+            [] // 思考モデルにはツールを渡さない
+          )
+        : this.model;
+
+      // ツール実行用モデル
+      this.toolExecutionModel = multiModelConfig.toolExecutionModel
+        ? this.createModel(
+            provider,
+            apiKey,
+            multiModelConfig.toolExecutionModel,
+            temperature,
+            maxTokens,
+            customEndpoint,
+            this.tools // ツール実行モデルにはツールを渡す
+          )
+        : this.model;
+    } else {
+      // マルチモデル無効時は全て同じモデルを使用
+      this.thinkingModel = this.model;
+      this.toolExecutionModel = this.model;
+    }
+
     this.compiledGraph = this.createGraph();
   }
 
@@ -349,7 +395,9 @@ export class LangGraphChatWorkflow {
       return this.callModelWithTools(messages, providerName);
     }
 
-    const response = await this.invokeChatModel(messages, providerName);
+    // マルチモデル設定がある場合は思考モデルを使用
+    const modelToUse = this.multiModelConfig?.enabled ? this.thinkingModel : this.model;
+    const response = await this.invokeChatModel(messages, providerName, modelToUse);
     const content = this.extractContentFromResponse(response, providerName);
 
     return {
@@ -376,7 +424,9 @@ export class LangGraphChatWorkflow {
         status: `Thinking... (${iteration + 1}/${this.maxToolIterations})`,
       });
 
-      const response = await this.invokeChatModel(conversation, providerName);
+      // マルチモデル設定が有効な場合、ツール実行用モデルを使用
+      const modelForToolCall = this.multiModelConfig?.enabled ? this.toolExecutionModel : this.model;
+      const response = await this.invokeChatModel(conversation, providerName, modelForToolCall);
       const aiMessage = response;
       appended.push(aiMessage);
       conversation.push(aiMessage);
@@ -619,30 +669,33 @@ export class LangGraphChatWorkflow {
 
   private async invokeChatModel(
     messages: BaseMessage[],
-    providerName: string
+    providerName: string,
+    model?: ChatModel
   ): Promise<AIMessage> {
+    const modelToUse = model || this.model;
+
     try {
       let response: BaseMessage;
 
       if (this.tools.length > 0 && this.isOpenAI()) {
         // For tool calling, use lower temperature for more deterministic behavior
         // This reduces randomness and helps prevent duplicate tool calls
-        const originalTemp = (this.model as ChatOpenAI).temperature;
+        const originalTemp = (modelToUse as ChatOpenAI).temperature;
 
         try {
           // Temporarily set temperature to 0.2 for tool calling
-          (this.model as ChatOpenAI).temperature = 0.2;
+          (modelToUse as ChatOpenAI).temperature = 0.2;
           // Disable parallel tool calls to reduce API requests
-          response = await this.model.bindTools(this.tools, {
+          response = await modelToUse.bindTools(this.tools, {
             tool_choice: "auto",
             parallel_tool_calls: false
           }).invoke(messages);
         } finally {
           // Restore original temperature
-          (this.model as ChatOpenAI).temperature = originalTemp;
+          (modelToUse as ChatOpenAI).temperature = originalTemp;
         }
       } else {
-        response = await this.model.invoke(messages);
+        response = await modelToUse.invoke(messages);
       }
 
       if (response instanceof AIMessage) {
@@ -766,8 +819,9 @@ export function createChatWorkflow(
   customEndpoint?: string,
   tools?: StructuredToolInterface[],
   maxToolIterations?: number,
-  progressCallback?: ProgressCallback
+  progressCallback?: ProgressCallback,
+  multiModelConfig?: MultiModelConfig
 ): LangGraphChatWorkflow {
-  return new LangGraphChatWorkflow(provider, apiKey, model, temperature, maxTokens, customEndpoint, tools, maxToolIterations, progressCallback);
+  return new LangGraphChatWorkflow(provider, apiKey, model, temperature, maxTokens, customEndpoint, tools, maxToolIterations, progressCallback, multiModelConfig);
 }
 
