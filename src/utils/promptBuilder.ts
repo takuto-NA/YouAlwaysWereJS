@@ -68,9 +68,18 @@ IMPORTANT: Follow these rules when using tools:
 1. Each tool should be called only ONCE per unique input/parameter combination
 2. If you've already received results from a tool call (e.g., kuzu_describe_table for a specific table), DO NOT call it again - use the previous results
 3. Before calling a tool, check if you've already called it with the same parameters in this conversation
-4. If all necessary information has been gathered, provide the final answer instead of repeating tool calls
-5. MINIMIZE the number of tool calls - only call tools that are absolutely necessary to answer the user's question
-6. For database queries, focus on the MOST RELEVANT tables first - do NOT describe all available tables unless specifically asked
+4. MINIMIZE the number of tool calls - only call tools that are absolutely necessary to answer the user's question
+5. For database queries, focus on the MOST RELEVANT tables first - do NOT describe all available tables unless specifically asked
+
+--- Multi-Model Mode Response Guidelines ---
+CRITICAL: If you are the TOOL EXECUTION MODEL (not the response generation model):
+- After gathering all necessary information from tools, OUTPUT A BRIEF INTERNAL SUMMARY ONLY
+- DO NOT create a detailed user-facing response
+- DO NOT format the response nicely for the user
+- Simply output: "Tools executed. Retrieved: [brief summary of data]"
+- Example: "Tools executed. Retrieved: User profile (name: 八雲カグラ) and 5 conversation logs."
+- The response generation model will create the final user-facing answer
+- Keep your response under 100 characters to trigger the handoff
 
 --- Kuzu Graph Database Critical Rules ---
 CRITICAL: When working with Kuzu graph database:

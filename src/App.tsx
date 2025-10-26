@@ -244,6 +244,11 @@ function App() {
 
       // マルチモデル設定を適用
       if (settings.multiModel) {
+        logDebug("App", "Applying multi-model config", {
+          enabled: settings.multiModel.enabled,
+          thinkingModel: settings.multiModel.thinkingModel,
+          toolExecutionModel: settings.multiModel.toolExecutionModel,
+        });
         customService.setMultiModelConfig(settings.multiModel);
       }
 

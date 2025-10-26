@@ -115,6 +115,9 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
   useEffect(() => {
     if (isOpen) {
       const loadedSettings = loadSettings();
+      logDebug("Settings", "モーダル開いた時の設定読み込み", {
+        multiModel: loadedSettings.multiModel,
+      });
       setSettings(loadedSettings);
       setOriginalSettings(loadedSettings);
       resetSaveMessage();
@@ -208,6 +211,7 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
         hasApiKey: settings.openaiApiKey.length > 0,
         typewriterSpeed: settings.typewriterSpeed,
         autoScroll: settings.autoScroll,
+        multiModel: settings.multiModel,
       });
     });
   };
@@ -894,35 +898,37 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
 
                     {settings.multiModel?.enabled && (
                       <div className="space-y-4 pt-3 border-t border-gray-800">
-                        {/* Thinking Model */}
+                        {/* Response Generation Model */}
                         <div className="space-y-2">
                           <label
                             htmlFor="thinking-model-select"
                             className="text-white text-sm font-light uppercase tracking-wider flex items-center gap-2"
                           >
-                            💭 Thinking & Response Model
+                            💬 Response Generation Model
                           </label>
                           <select
                             id="thinking-model-select"
                             value={settings.multiModel?.thinkingModel || settings.openaiModel}
-                            onChange={(e) =>
+                            onChange={(e) => {
+                              const newConfig = {
+                                enabled: true,
+                                thinkingModel: e.target.value,
+                                toolExecutionModel: settings.multiModel?.toolExecutionModel,
+                              };
+                              logDebug("Settings", "thinkingModel変更", newConfig);
                               setSettings({
                                 ...settings,
-                                multiModel: {
-                                  ...settings.multiModel,
-                                  enabled: true,
-                                  thinkingModel: e.target.value,
-                                },
-                              })
-                            }
+                                multiModel: newConfig,
+                              });
+                            }}
                             className="w-full bg-black border border-gray-700 text-white px-4 py-2 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
                           >
+                            <optgroup label="Moonshot (Recommended for Response)">
+                              <option value="moonshotai/kimi-k2-instruct-0905">Kimi K2 (Fluent Japanese)</option>
+                            </optgroup>
                             <optgroup label="Groq (Fast & Cheap)">
                               <option value="groq/compound-mini">Groq Compound Mini (Fastest)</option>
                               <option value="groq/compound">Groq Compound (Balanced)</option>
-                            </optgroup>
-                            <optgroup label="Moonshot">
-                              <option value="moonshotai/kimi-k2-instruct-0905">Kimi K2 (Multilingual)</option>
                             </optgroup>
                             <optgroup label="OpenAI OSS">
                               <option value="openai/gpt-oss-20b">GPT-OSS 20B</option>
@@ -930,35 +936,37 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                             </optgroup>
                           </select>
                           <p className="text-xs text-gray-500">
-                            Used for: Initial reasoning, response generation (use fast/cheap models)
+                            Used for: Final user-facing response generation ONLY (not tool decisions)
                           </p>
                         </div>
 
-                        {/* Tool Execution Model */}
+                        {/* Tool Decision & Execution Model */}
                         <div className="space-y-2">
                           <label
                             htmlFor="tool-execution-model-select"
                             className="text-white text-sm font-light uppercase tracking-wider flex items-center gap-2"
                           >
-                            🔧 Tool Execution Model
+                            🔧 Tool Decision & Execution Model
                           </label>
                           <select
                             id="tool-execution-model-select"
                             value={settings.multiModel?.toolExecutionModel || settings.openaiModel}
-                            onChange={(e) =>
+                            onChange={(e) => {
+                              const newConfig = {
+                                enabled: true,
+                                thinkingModel: settings.multiModel?.thinkingModel,
+                                toolExecutionModel: e.target.value,
+                              };
+                              logDebug("Settings", "toolExecutionModel変更", newConfig);
                               setSettings({
                                 ...settings,
-                                multiModel: {
-                                  ...settings.multiModel,
-                                  enabled: true,
-                                  toolExecutionModel: e.target.value,
-                                },
-                              })
-                            }
+                                multiModel: newConfig,
+                              });
+                            }}
                             className="w-full bg-black border border-gray-700 text-white px-4 py-2 text-sm focus:outline-none focus:border-white focus:ring-2 focus:ring-white transition-all duration-200"
                           >
-                            <optgroup label="OpenAI OSS (Powerful)">
-                              <option value="openai/gpt-oss-120b">GPT-OSS 120B (Recommended)</option>
+                            <optgroup label="OpenAI OSS (Recommended for Tools)">
+                              <option value="openai/gpt-oss-120b">GPT-OSS 120B (Most Accurate)</option>
                               <option value="openai/gpt-oss-20b">GPT-OSS 20B</option>
                             </optgroup>
                             <optgroup label="Groq">
@@ -970,15 +978,16 @@ function SettingsModal({ isOpen, onClose, onSave }: SettingsModalProps) {
                             </optgroup>
                           </select>
                           <p className="text-xs text-gray-500">
-                            Used for: Tool calling decisions and parameter generation (use powerful models)
+                            Used for: Deciding which tools to call and generating parameters (use powerful/accurate models)
                           </p>
                         </div>
 
                         {/* Example Configuration Info */}
                         <div className="bg-black/40 border border-gray-800 px-3 py-2 text-xs text-gray-400 space-y-1">
                           <p className="font-semibold text-gray-300">💡 Recommended Configuration:</p>
-                          <p>• Thinking: <code className="text-green-400">moonshotai/kimi-k2-instruct-0905</code> (Fast, cheap responses)</p>
-                          <p>• Tool Execution: <code className="text-blue-400">openai/gpt-oss-120b</code> (Accurate tool calls)</p>
+                          <p>• Response Generation: <code className="text-green-400">moonshotai/kimi-k2-instruct-0905</code> (Fluent, natural Japanese)</p>
+                          <p>• Tool Decision: <code className="text-blue-400">openai/gpt-oss-120b</code> (Accurate tool calling)</p>
+                          <p className="text-yellow-400 pt-1">⚠️ Note: Kimi K2 is NOT good at tool decisions - only for final responses!</p>
                         </div>
                       </div>
                     )}
