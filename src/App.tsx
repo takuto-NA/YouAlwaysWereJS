@@ -561,7 +561,8 @@ function App() {
                 </div>
               ))}
 
-            {chatState.isProcessing && (
+            {/* プログレスバーがある場合は「処理中」を表示しない（二重表示を防ぐ） */}
+            {chatState.isProcessing && !chatState.messages.some(msg => msg.progress) && (
               <div className="text-gray-500 text-sm animate-pulse flex items-center gap-2 my-4">
                 <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce"></div>
                 <div
